@@ -47,11 +47,8 @@ import {
   type DebateRecord,
   unsubscribeFromChannel,
 } from './src/lib/debates';
-import {
-  debates as mockDebates,
-  liveRoom,
-  type DebateCardItem,
-} from './src/data/mockDebates';
+import type { DebateCardItem } from './src/data/mockDebates';
+import { uploadDebateThumbnail } from './src/lib/storage';
 import { getEnvErrorMessage } from './src/lib/env';
 import { colors } from './src/theme';
 
@@ -167,6 +164,7 @@ function mapLiveDebateToCard(
     topic: debate.topic,
     isPublic: debate.is_public,
     startedAt: formatStartedAt(debate.created_at),
+    image: debate.thumbnail_url ?? undefined,
   };
 }
 
@@ -185,6 +183,7 @@ function mapScheduledDebateToCard(
     topic: debate.topic,
     isPublic: debate.is_public,
     scheduledFor: debate.scheduled_for ? formatScheduledFor(debate.scheduled_for) : undefined,
+    image: debate.thumbnail_url ?? undefined,
   };
 }
 
@@ -192,7 +191,6 @@ export default function App() {
   const configError = getEnvErrorMessage();
   const presenceChannelsRef = useRef<Record<string, RealtimeChannel>>({});
   const [screen, setScreen] = useState<Screen>('home');
-  const [selectedDebateId, setSelectedDebateId] = useState(mockDebates[0]?.id ?? '');
   const [session, setSession] = useState<Session | null>(null);
   const [authVariant, setAuthVariant] = useState<AuthVariant>('sign-in');
   const [email, setEmail] = useState('');
@@ -218,8 +216,6 @@ export default function App() {
   const [createDebateError, setCreateDebateError] = useState<string | null>(null);
   const [createDebateSubmitting, setCreateDebateSubmitting] = useState(false);
 
-  const selectedDebate =
-    mockDebates.find((debate) => debate.id === selectedDebateId) ?? mockDebates[0];
   const currentUserName =
     (session?.user.user_metadata?.full_name as string | undefined) ??
     session?.user.email?.split('@')[0] ??
@@ -309,22 +305,14 @@ export default function App() {
 
     async function loadAll() {
       try {
-        const [liveDebates, scheduledDebates, profile, myDebates, myLiked, myLikedIds] =
-          await Promise.all([
-            getPublicLiveDebates(),
-            getPublicScheduledDebates(),
-            getOrCreateProfile(userId),
-            getUserDebates(userId),
-            getLikedDebates(userId),
-            getLikedDebateIds(userId),
-          ]);
+        // Debates are critical — fail loudly if these don't work
+        const [liveDebates, scheduledDebates] = await Promise.all([
+          getPublicLiveDebates(),
+          getPublicScheduledDebates(),
+        ]);
         if (active) {
           setPublicLiveDebates(liveDebates);
           setPublicScheduledDebates(scheduledDebates);
-          setUserProfile(profile);
-          setUserDebates(myDebates);
-          setLikedDebates(myLiked);
-          setLikedDebateIds(new Set(myLikedIds));
         }
       } catch (error) {
         if (active) {
@@ -334,6 +322,24 @@ export default function App() {
         }
       } finally {
         if (active) setDebatesLoading(false);
+      }
+
+      // Profile data is secondary — don't let failures block the debates feed
+      try {
+        const [profile, myDebates, myLiked, myLikedIds] = await Promise.all([
+          getOrCreateProfile(userId),
+          getUserDebates(userId),
+          getLikedDebates(userId),
+          getLikedDebateIds(userId),
+        ]);
+        if (active) {
+          setUserProfile(profile);
+          setUserDebates(myDebates);
+          setLikedDebates(myLiked);
+          setLikedDebateIds(new Set(myLikedIds));
+        }
+      } catch {
+        // Profile tables may not exist yet — silently ignore
       }
     }
 
@@ -581,6 +587,11 @@ export default function App() {
     setCreateDebateError(null);
 
     try {
+      let thumbnailUrl: string | null = null;
+      if (values.thumbnailUri) {
+        thumbnailUrl = await uploadDebateThumbnail(session.user.id, values.thumbnailUri);
+      }
+
       const createdDebate = await createDebate({
         hostUserId: session.user.id,
         title: values.title,
@@ -588,6 +599,7 @@ export default function App() {
         description: values.description,
         isPublic: values.isPublic,
         scheduledFor: values.scheduledFor,
+        thumbnailUrl,
       });
 
       if (values.scheduledFor) {
@@ -669,17 +681,7 @@ export default function App() {
   }
 
   function handleOpenDebate(debateId: string) {
-    // Check if it's a scheduled debate (not started yet)
-    const scheduledDebate = publicScheduledDebates.find((d) => d.id === debateId);
-    if (scheduledDebate) {
-      // Only the host can start a scheduled debate by tapping it
-      if (scheduledDebate.host_user_id === session?.user.id) {
-        void handleStartScheduled(debateId);
-      }
-      // Viewers see nothing yet (debate hasn't started)
-      return;
-    }
-
+    // Live debate — enter the room
     const nextLiveDebate = publicLiveDebates.find((debate) => debate.id === debateId);
     if (nextLiveDebate) {
       setActiveLiveDebate(nextLiveDebate);
@@ -687,9 +689,16 @@ export default function App() {
       return;
     }
 
-    setActiveLiveDebate(null);
-    setSelectedDebateId(debateId);
-    setScreen('room');
+    // Scheduled debate — host can start it, others see nothing
+    const scheduledDebate = publicScheduledDebates.find((d) => d.id === debateId);
+    if (scheduledDebate) {
+      if (scheduledDebate.host_user_id === session?.user.id) {
+        void handleStartScheduled(debateId);
+      }
+      return;
+    }
+
+    // Ended / private debates — don't reopen the stream
   }
 
   return (
@@ -777,14 +786,6 @@ export default function App() {
             onClose={() => {
               void handleCloseLiveDebate();
             }}
-          />
-        ) : null}
-
-        {session && screen === 'room' && !activeLiveDebate && selectedDebate ? (
-          <DebateRoomScreen
-            debate={selectedDebate}
-            room={liveRoom}
-            onClose={() => setScreen('home')}
           />
         ) : null}
 

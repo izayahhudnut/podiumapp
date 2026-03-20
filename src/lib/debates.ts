@@ -11,6 +11,7 @@ export type DebateRecord = {
   is_public: boolean;
   status: 'live' | 'scheduled' | 'ended';
   scheduled_for: string | null;
+  thumbnail_url: string | null;
   created_at: string;
 };
 
@@ -48,6 +49,7 @@ export type CreateDebateInput = {
   description: string;
   isPublic: boolean;
   scheduledFor?: string | null;
+  thumbnailUrl?: string | null;
 };
 
 export type SendDebateMessageInput = {
@@ -71,6 +73,7 @@ export async function createDebate(input: CreateDebateInput) {
       is_public: input.isPublic,
       status: isScheduled ? 'scheduled' : 'live',
       scheduled_for: input.scheduledFor ?? null,
+      thumbnail_url: input.thumbnailUrl ?? null,
     })
     .select('*')
     .single<DebateRecord>();

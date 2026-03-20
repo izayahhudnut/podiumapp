@@ -4,11 +4,21 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "preview": {
+      "distribution": "internal",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pwfuzrifwlludyiyuumc.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_8CvfOJQOE7aZysfrDUbBnA_hassKI2l",
+        "EXPO_PUBLIC_LIVEKIT_URL": "wss://parium-cb34kkgj.livekit.cloud"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://pwfuzrifwlludyiyuumc.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_8CvfOJQOE7aZysfrDUbBnA_hassKI2l"
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_8CvfOJQOE7aZysfrDUbBnA_hassKI2l",
+        "EXPO_PUBLIC_LIVEKIT_URL": "wss://parium-cb34kkgj.livekit.cloud"
       }
     }
   },

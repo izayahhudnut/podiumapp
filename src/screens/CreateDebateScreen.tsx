@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 
 import { colors, radii, spacing } from '../theme';
 
@@ -19,6 +21,7 @@ export type CreateDebateValues = {
   description: string;
   isPublic: boolean;
   scheduledFor: string | null;
+  thumbnailUri: string | null;
 };
 
 type CreateDebateScreenProps = {
@@ -92,6 +95,7 @@ export function CreateDebateScreen({
   const [topic, setTopic] = useState('');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [launchMode, setLaunchMode] = useState<LaunchMode>('now');
   const [tools, setTools] = useState({
     factCheck: true,
@@ -120,6 +124,22 @@ export function CreateDebateScreen({
     setTools((current) => ({ ...current, [tool]: !current[tool] }));
   }
 
+  async function handlePickThumbnail() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.7,
+      mediaTypes: ['images'],
+    });
+
+    if (!result.canceled) {
+      setThumbnailUri(result.assets[0]?.uri ?? null);
+    }
+  }
+
   async function handleSubmit() {
     const scheduledFor =
       launchMode === 'schedule' ? buildScheduledFor(selectedDate, selectedTime) : null;
@@ -130,6 +150,7 @@ export function CreateDebateScreen({
       description: description.trim(),
       isPublic,
       scheduledFor,
+      thumbnailUri,
     });
   }
 
@@ -323,6 +344,34 @@ export function CreateDebateScreen({
             editable={!submitting}
             textAlignVertical="top"
           />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>Thumbnail</Text>
+          <Pressable
+            style={({ pressed }) => [styles.thumbnailPicker, pressed && styles.pressed]}
+            onPress={() => { void handlePickThumbnail(); }}
+            disabled={submitting}
+          >
+            {thumbnailUri ? (
+              <View style={styles.thumbnailPreviewWrap}>
+                <Image source={{ uri: thumbnailUri }} style={styles.thumbnailPreview} />
+                <Pressable
+                  style={styles.removeThumbnail}
+                  onPress={() => setThumbnailUri(null)}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close-circle" size={24} color="#fff" />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.thumbnailEmpty}>
+                <Ionicons name="image-outline" size={30} color={colors.textDim} />
+                <Text style={styles.thumbnailEmptyText}>Add thumbnail</Text>
+                <Text style={styles.thumbnailEmptyHint}>16:9 · Shows on debate card</Text>
+              </View>
+            )}
+          </Pressable>
         </View>
 
         <View style={styles.field}>
@@ -653,6 +702,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '400',
     letterSpacing: 0.3,
+  },
+  thumbnailPicker: {
+    borderRadius: radii.md,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  thumbnailPreviewWrap: {
+    position: 'relative',
+  },
+  thumbnailPreview: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+  },
+  removeThumbnail: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+  },
+  thumbnailEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xl,
+    gap: spacing.sm,
+  },
+  thumbnailEmptyText: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '400',
+  },
+  thumbnailEmptyHint: {
+    color: colors.textFaint,
+    fontSize: 12,
+    fontWeight: '300',
   },
   errorText: {
     color: '#FF7A7A',
