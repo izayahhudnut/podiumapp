@@ -125,6 +125,53 @@ export async function unlikeDebate(userId: string, debateId: string): Promise<vo
   }
 }
 
+export async function followUser(followerId: string, followingId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('follows')
+    .upsert({ follower_id: followerId, following_id: followingId }, { onConflict: 'follower_id,following_id' });
+  if (error) throw error;
+}
+
+export async function unfollowUser(followerId: string, followingId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('follows')
+    .delete()
+    .eq('follower_id', followerId)
+    .eq('following_id', followingId);
+  if (error) throw error;
+}
+
+export async function getFollowingIds(userId: string): Promise<string[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('follows')
+    .select('following_id')
+    .eq('follower_id', userId)
+    .returns<{ following_id: string }[]>();
+  if (error) throw error;
+  return (data ?? []).map((row) => row.following_id);
+}
+
+export async function getFollowerCount(userId: string): Promise<number> {
+  const supabase = getSupabaseClient();
+  const { count } = await supabase
+    .from('follows')
+    .select('id', { count: 'exact', head: true })
+    .eq('following_id', userId);
+  return count ?? 0;
+}
+
+export async function getFollowingCount(userId: string): Promise<number> {
+  const supabase = getSupabaseClient();
+  const { count } = await supabase
+    .from('follows')
+    .select('id', { count: 'exact', head: true })
+    .eq('follower_id', userId);
+  return count ?? 0;
+}
+
 export async function getSavedDebates(userId: string): Promise<DebateRecord[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase

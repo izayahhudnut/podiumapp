@@ -148,6 +148,31 @@ exception
 end $$;
 
 -- ============================================================
+-- Follow system
+-- ============================================================
+
+create table if not exists public.follows (
+  id uuid primary key default gen_random_uuid(),
+  follower_id uuid not null references auth.users(id) on delete cascade,
+  following_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default timezone('utc', now()),
+  unique(follower_id, following_id),
+  check (follower_id != following_id)
+);
+
+alter table public.follows enable row level security;
+
+drop policy if exists "users can read follows" on public.follows;
+create policy "users can read follows"
+on public.follows for select to authenticated using (true);
+
+drop policy if exists "users can manage their own follows" on public.follows;
+create policy "users can manage their own follows"
+on public.follows for all to authenticated
+using (auth.uid() = follower_id)
+with check (auth.uid() = follower_id);
+
+-- ============================================================
 -- Gifting system
 -- ============================================================
 

@@ -34,6 +34,11 @@ import {
   getSavedDebateIds,
   saveDebate,
   unsaveDebate,
+  followUser,
+  unfollowUser,
+  getFollowingIds,
+  getFollowerCount,
+  getFollowingCount,
   upsertProfile,
   type ProfileRecord,
 } from './src/lib/profile';
@@ -213,6 +218,9 @@ export default function App() {
   const [likedDebateIds, setLikedDebateIds] = useState<Set<string>>(new Set());
   const [savedDebates, setSavedDebates] = useState<DebateRecord[]>([]);
   const [savedDebateIds, setSavedDebateIds] = useState<Set<string>>(new Set());
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [presenceSnapshots, setPresenceSnapshots] = useState<Record<string, DebatePresenceState>>(
@@ -307,6 +315,9 @@ export default function App() {
       setLikedDebateIds(new Set());
       setSavedDebates([]);
       setSavedDebateIds(new Set());
+      setFollowingIds(new Set());
+      setFollowerCount(0);
+      setFollowingCount(0);
       setDebatesLoading(false);
       setDebatesError(null);
       return;
@@ -341,13 +352,16 @@ export default function App() {
 
       // Profile data is secondary — don't let failures block the debates feed
       try {
-        const [profile, myDebates, myLiked, myLikedIds, mySaved, mySavedIds] = await Promise.all([
+        const [profile, myDebates, myLiked, myLikedIds, mySaved, mySavedIds, myFollowingIds, myFollowerCount, myFollowingCount] = await Promise.all([
           getOrCreateProfile(userId),
           getUserDebates(userId),
           getLikedDebates(userId),
           getLikedDebateIds(userId),
           getSavedDebates(userId),
           getSavedDebateIds(userId),
+          getFollowingIds(userId),
+          getFollowerCount(userId),
+          getFollowingCount(userId),
         ]);
         if (active) {
           setUserProfile(profile);
@@ -356,6 +370,9 @@ export default function App() {
           setLikedDebateIds(new Set(myLikedIds));
           setSavedDebates(mySaved);
           setSavedDebateIds(new Set(mySavedIds));
+          setFollowingIds(new Set(myFollowingIds));
+          setFollowerCount(myFollowerCount);
+          setFollowingCount(myFollowingCount);
         }
       } catch {
         // Profile tables may not exist yet — silently ignore
@@ -523,6 +540,9 @@ export default function App() {
       setLikedDebateIds(new Set());
       setSavedDebates([]);
       setSavedDebateIds(new Set());
+      setFollowingIds(new Set());
+      setFollowerCount(0);
+      setFollowingCount(0);
       setActiveLiveDebate(null);
       setAuthVariant('sign-in');
       setPassword('');
@@ -626,6 +646,32 @@ export default function App() {
         if (alreadySaved) next.add(debateId); else next.delete(debateId);
         return next;
       });
+    }
+  }
+
+  async function handleToggleFollow(targetUserId: string) {
+    if (!session) return;
+    const alreadyFollowing = followingIds.has(targetUserId);
+    setFollowingIds((prev) => {
+      const next = new Set(prev);
+      if (alreadyFollowing) next.delete(targetUserId); else next.add(targetUserId);
+      return next;
+    });
+    setFollowingCount((prev) => prev + (alreadyFollowing ? -1 : 1));
+    try {
+      if (alreadyFollowing) {
+        await unfollowUser(session.user.id, targetUserId);
+      } else {
+        await followUser(session.user.id, targetUserId);
+      }
+    } catch {
+      // Revert on failure
+      setFollowingIds((prev) => {
+        const next = new Set(prev);
+        if (alreadyFollowing) next.add(targetUserId); else next.delete(targetUserId);
+        return next;
+      });
+      setFollowingCount((prev) => prev + (alreadyFollowing ? 1 : -1));
     }
   }
 
@@ -849,6 +895,8 @@ export default function App() {
             onOpenDebate={handleOpenDebate}
             onSaveDebate={(id) => void handleToggleSave(id)}
             onDeleteDebate={(id) => void handleDeleteDebate(id)}
+            followerCount={followerCount}
+            followingCount={followingCount}
           />
         ) : null}
 
@@ -860,6 +908,8 @@ export default function App() {
             showCameraPreview={activeLiveDebate.host_user_id === session.user.id}
             isLiked={likedDebateIds.has(activeLiveDebate.id)}
             onToggleLike={() => void handleToggleLike(activeLiveDebate.id)}
+            isFollowingHost={followingIds.has(activeLiveDebate.host_user_id)}
+            onToggleFollow={() => void handleToggleFollow(activeLiveDebate.host_user_id)}
             onClose={() => {
               void handleCloseLiveDebate();
             }}

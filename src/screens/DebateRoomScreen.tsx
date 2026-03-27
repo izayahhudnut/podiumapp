@@ -59,6 +59,8 @@ type DebateRoomScreenProps = {
   showCameraPreview?: boolean;
   isLiked?: boolean;
   onToggleLike?: () => void;
+  isFollowingHost?: boolean;
+  onToggleFollow?: () => void;
   onClose: () => void;
 };
 
@@ -191,6 +193,8 @@ export function DebateRoomScreen({
   showCameraPreview = false,
   isLiked = false,
   onToggleLike,
+  isFollowingHost = false,
+  onToggleFollow,
   onClose,
 }: DebateRoomScreenProps) {
   const inputRef = useRef<TextInput>(null);
@@ -202,6 +206,7 @@ export function DebateRoomScreen({
   const [sendingMessage, setSendingMessage] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [isGiftPickerOpen, setIsGiftPickerOpen] = useState(false);
+  const [isInfoSheetOpen, setIsInfoSheetOpen] = useState(false);
   const [giftOverlayItems, setGiftOverlayItems] = useState<GiftOverlayItem[]>([]);
   const [permission] = useCameraPermissions();
 
@@ -220,6 +225,8 @@ export function DebateRoomScreen({
     participants.filter((participant) => !participant.removed),
   );
   const title = 'title' in debate ? debate.title : '';
+  const topic = debate.topic ?? '';
+  const description = 'description' in debate ? (debate.description ?? '') : '';
   const viewerLabel = room?.viewers ?? `${visibleParticipants.length}`;
   const factCheck = room?.factCheck ?? liveRoom.factCheck;
   const bottomBarOffset = keyboardOffset > 0 ? keyboardOffset + spacing.md : 0;
@@ -239,6 +246,13 @@ export function DebateRoomScreen({
           icon: isLiked ? 'heart' : 'heart-outline',
           label: isLiked ? 'Liked' : 'Like',
         } as ActionItem,
+        ...(isRealtimeRoom && hostUserId && currentUser?.id !== hostUserId
+          ? [{
+              key: 'follow',
+              icon: (isFollowingHost ? 'person-remove-outline' : 'person-add-outline') as ComponentProps<typeof Ionicons>['name'],
+              label: isFollowingHost ? 'Following' : 'Follow',
+            } as ActionItem]
+          : []),
         ...(isGiftEnabled
           ? [{ key: 'gift', icon: 'gift-outline', label: 'Gift' } as ActionItem]
           : []),
@@ -439,6 +453,11 @@ export function DebateRoomScreen({
       return;
     }
 
+    if (actionKey === 'follow') {
+      onToggleFollow?.();
+      return;
+    }
+
     if (actionKey === 'chat') {
       inputRef.current?.focus();
       return;
@@ -562,10 +581,19 @@ export function DebateRoomScreen({
 
       {/* Top bar */}
       <View style={styles.topBar}>
-        <View style={styles.titlePill}>
-          <Text numberOfLines={1} style={styles.titlePillText}>
-            {title}
-          </Text>
+        <View style={styles.titleArea}>
+          <Pressable
+            style={({ pressed }) => [styles.titlePill, pressed && styles.pressed]}
+            onPress={() => setIsInfoSheetOpen(true)}
+          >
+            <Text numberOfLines={1} style={styles.titlePillText}>{title}</Text>
+            <Ionicons name="information-circle-outline" size={14} color="rgba(255,255,255,0.55)" />
+          </Pressable>
+          {topic ? (
+            <View style={styles.topicChip}>
+              <Text style={styles.topicChipText}>{topic}</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.topControls}>
@@ -662,6 +690,44 @@ export function DebateRoomScreen({
           onGiftSent={() => setIsGiftPickerOpen(false)}
         />
       ) : null}
+
+      {/* Debate info sheet */}
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isInfoSheetOpen}
+        onRequestClose={() => setIsInfoSheetOpen(false)}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setIsInfoSheetOpen(false)} />
+          <View style={styles.infoSheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.infoHeader}>
+              <View style={styles.infoTopicPill}>
+                <Text style={styles.infoTopicText}>{topic}</Text>
+              </View>
+              <Pressable
+                onPress={() => setIsInfoSheetOpen(false)}
+                style={({ pressed }) => [styles.infoCloseBtn, pressed && styles.pressed]}
+              >
+                <Ionicons name="close" size={18} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+            <Text style={styles.infoTitle}>{title}</Text>
+            {description ? (
+              <Text style={styles.infoDescription}>{description}</Text>
+            ) : (
+              <Text style={styles.infoDescriptionEmpty}>No description provided.</Text>
+            )}
+            <View style={styles.infoHostRow}>
+              <View style={styles.infoHostAvatar}>
+                <Text style={styles.infoHostAvatarText}>{hostParticipant.avatar}</Text>
+              </View>
+              <Text style={styles.infoHostName}>{hostParticipant.name}</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Stage management modal */}
       <Modal
@@ -801,15 +867,23 @@ const styles = StyleSheet.create({
     left: 0,
     zIndex: 2,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingTop: 56,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
     backgroundColor: 'rgba(0, 0, 0, 0.18)',
   },
+  titleArea: {
+    flex: 1,
+    gap: spacing.xs,
+    marginRight: spacing.sm,
+  },
   titlePill: {
-    maxWidth: '58%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    alignSelf: 'flex-start',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.lg,
@@ -820,6 +894,101 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 14,
     fontWeight: '500',
+    flexShrink: 1,
+  },
+  topicChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(140, 53, 248, 0.55)',
+  },
+  topicChipText: {
+    color: colors.textPrimary,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  // Info sheet
+  infoSheet: {
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    borderCurve: 'continuous',
+    backgroundColor: '#111114',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 44,
+    gap: spacing.lg,
+  },
+  infoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  infoTopicPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(140, 53, 248, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(140, 53, 248, 0.5)',
+  },
+  infoTopicText: {
+    color: '#C07EFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  infoCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.overlayStrong,
+  },
+  infoTitle: {
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '400',
+    lineHeight: 30,
+  },
+  infoDescription: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: '300',
+  },
+  infoDescriptionEmpty: {
+    color: colors.textFaint,
+    fontSize: 14,
+    fontWeight: '300',
+  },
+  infoHostRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSoft,
+  },
+  infoHostAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.avatar,
+  },
+  infoHostAvatarText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  infoHostName: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '400',
   },
   topControls: {
     flexDirection: 'row',

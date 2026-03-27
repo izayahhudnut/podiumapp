@@ -43,6 +43,8 @@ type ProfileScreenProps = {
   onOpenDebate: (debateId: string) => void;
   onSaveDebate: (debateId: string) => void;
   onDeleteDebate: (debateId: string) => void;
+  followerCount: number;
+  followingCount: number;
 };
 
 type Tab = 'debates' | 'liked' | 'saved';
@@ -76,6 +78,8 @@ export function ProfileScreen({
   onOpenDebate,
   onSaveDebate,
   onDeleteDebate,
+  followerCount,
+  followingCount,
 }: ProfileScreenProps) {
   const [tab, setTab] = useState<Tab>('debates');
   const [isEditing, setIsEditing] = useState(false);
@@ -168,12 +172,12 @@ export function ProfileScreen({
                 <Text style={styles.statLabel}>Debates</Text>
               </View>
               <View style={styles.stat}>
-                <Text style={styles.statValue}>{likedDebates.length}</Text>
-                <Text style={styles.statLabel}>Liked</Text>
+                <Text style={styles.statValue}>{followerCount}</Text>
+                <Text style={styles.statLabel}>Followers</Text>
               </View>
               <View style={styles.stat}>
-                <Text style={styles.statValue}>{savedDebates.length}</Text>
-                <Text style={styles.statLabel}>Saved</Text>
+                <Text style={styles.statValue}>{followingCount}</Text>
+                <Text style={styles.statLabel}>Following</Text>
               </View>
             </View>
           </View>
