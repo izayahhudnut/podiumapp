@@ -119,6 +119,19 @@ export async function endDebate(debateId: string, hostUserId: string) {
   return data;
 }
 
+export async function deleteDebate(debateId: string, hostUserId: string) {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('debates')
+    .delete()
+    .eq('id', debateId)
+    .eq('host_user_id', hostUserId);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function getPublicLiveDebates() {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase

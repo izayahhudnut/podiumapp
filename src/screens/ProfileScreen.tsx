@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -33,14 +34,18 @@ type ProfileScreenProps = {
   debateCount: number;
   debates: DebateCardItem[];
   likedDebates: DebateCardItem[];
+  savedDebates: DebateCardItem[];
+  savedDebateIds: Set<string>;
   editSubmitting?: boolean;
   editError?: string | null;
   onEditProfile: (values: EditProfileValues) => Promise<void>;
   onSignOut: () => void;
   onOpenDebate: (debateId: string) => void;
+  onSaveDebate: (debateId: string) => void;
+  onDeleteDebate: (debateId: string) => void;
 };
 
-type Tab = 'debates' | 'liked';
+type Tab = 'debates' | 'liked' | 'saved';
 
 function getInitials(name: string) {
   return (
@@ -62,11 +67,15 @@ export function ProfileScreen({
   debateCount,
   debates,
   likedDebates,
+  savedDebates,
+  savedDebateIds,
   editSubmitting = false,
   editError = null,
   onEditProfile,
   onSignOut,
   onOpenDebate,
+  onSaveDebate,
+  onDeleteDebate,
 }: ProfileScreenProps) {
   const [tab, setTab] = useState<Tab>('debates');
   const [isEditing, setIsEditing] = useState(false);
@@ -77,7 +86,8 @@ export function ProfileScreen({
   const [editBio, setEditBio] = useState(bio ?? '');
   const [editAvatarUri, setEditAvatarUri] = useState<string | null>(userAvatarUri ?? null);
 
-  const visibleDebates = tab === 'debates' ? debates : likedDebates;
+  const visibleDebates =
+    tab === 'debates' ? debates : tab === 'liked' ? likedDebates : savedDebates;
   const displayUsername = username || userEmail.split('@')[0];
   const initials = getInitials(userName);
 
@@ -115,6 +125,17 @@ export function ProfileScreen({
     setIsEditing(false);
   }
 
+  function confirmDelete(debateId: string) {
+    Alert.alert(
+      'Delete Debate',
+      'Are you sure you want to permanently delete this debate?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => onDeleteDebate(debateId) },
+      ],
+    );
+  }
+
   return (
     <>
       <ScrollView
@@ -150,13 +171,16 @@ export function ProfileScreen({
                 <Text style={styles.statValue}>{likedDebates.length}</Text>
                 <Text style={styles.statLabel}>Liked</Text>
               </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{savedDebates.length}</Text>
+                <Text style={styles.statLabel}>Saved</Text>
+              </View>
             </View>
           </View>
 
           <View style={styles.bioBlock}>
             <Text style={styles.name}>{userName}</Text>
             <Text style={styles.usernameText}>@{displayUsername}</Text>
-            <Text style={styles.sessionEmail}>{userEmail}</Text>
             {bio ? <Text style={styles.bioText}>{bio}</Text> : null}
           </View>
 
@@ -188,6 +212,11 @@ export function ProfileScreen({
             <Text style={[styles.tabText, tab === 'liked' && styles.tabTextActive]}>Liked</Text>
             {tab === 'liked' && <View style={styles.tabUnderline} />}
           </Pressable>
+
+          <Pressable style={styles.tabButton} onPress={() => setTab('saved')}>
+            <Text style={[styles.tabText, tab === 'saved' && styles.tabTextActive]}>Saved</Text>
+            {tab === 'saved' && <View style={styles.tabUnderline} />}
+          </Pressable>
         </View>
 
         {visibleDebates.length > 0 ? (
@@ -205,13 +234,39 @@ export function ProfileScreen({
                   onPress={() => onOpenDebate(debate.id)}
                   compact
                 />
+                <View style={styles.cardActions}>
+                  {tab === 'debates' ? (
+                    <Pressable
+                      style={({ pressed }) => [styles.cardAction, pressed && styles.pressed]}
+                      onPress={() => confirmDelete(debate.id)}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#FF7A7A" />
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    style={({ pressed }) => [styles.cardAction, pressed && styles.pressed]}
+                    onPress={() => onSaveDebate(debate.id)}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={savedDebateIds.has(debate.id) ? 'bookmark' : 'bookmark-outline'}
+                      size={16}
+                      color={savedDebateIds.has(debate.id) ? colors.textPrimary : colors.textDim}
+                    />
+                  </Pressable>
+                </View>
               </View>
             ))}
           </View>
         ) : (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>
-              {tab === 'debates' ? "You haven't hosted any debates yet" : "You haven't liked any debates yet"}
+              {tab === 'debates'
+                ? "You haven't hosted any debates yet"
+                : tab === 'liked'
+                  ? "You haven't liked any debates yet"
+                  : "You haven't saved any debates yet"}
             </Text>
           </View>
         )}
@@ -419,11 +474,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '400',
   },
-  sessionEmail: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '300',
-  },
   bioText: {
     color: colors.textSecondary,
     fontSize: 14,
@@ -508,6 +558,16 @@ const styles = StyleSheet.create({
   },
   gridRight: {
     paddingLeft: spacing.sm,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.md,
+    paddingTop: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  cardAction: {
+    padding: spacing.xs,
   },
   emptyState: {
     alignItems: 'center',

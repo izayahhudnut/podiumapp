@@ -41,7 +41,10 @@ import {
 import { fetchLivekitToken } from '../lib/livekit';
 import { colors, radii, spacing } from '../theme';
 import { FactCheckStrip } from '../components/FactCheckStrip';
+import { GiftOverlay, type GiftOverlayItem } from '../components/GiftOverlay';
+import { GiftPicker } from '../components/GiftPicker';
 import { LiveComment, type LiveCommentItem } from '../components/LiveComment';
+import { subscribeToGiftEvents } from '../lib/gifts';
 
 type DebateRoomScreenProps = {
   debate: DebateCardItem | DebateRecord;
@@ -197,6 +200,8 @@ export function DebateRoomScreen({
   const [messageError, setMessageError] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [isGiftPickerOpen, setIsGiftPickerOpen] = useState(false);
+  const [giftOverlayItems, setGiftOverlayItems] = useState<GiftOverlayItem[]>([]);
   const [permission] = useCameraPermissions();
 
   // LiveKit state
@@ -206,6 +211,9 @@ export function DebateRoomScreen({
   const [cameraEnabled, setCameraEnabled] = useState(showCameraPreview);
 
   const isRealtimeRoom = Boolean(liveDebateId && currentUser);
+  const hostUserId =
+    'host_user_id' in debate ? debate.host_user_id : (debate.hostId ?? null);
+  const isGiftEnabled = isRealtimeRoom && Boolean(hostUserId) && currentUser?.id !== hostUserId;
   const hostParticipant = getHostParticipant(debate, currentUser);
   const visibleParticipants = sortParticipants(
     participants.filter((participant) => !participant.removed),
@@ -230,6 +238,9 @@ export function DebateRoomScreen({
           icon: isLiked ? 'heart' : 'heart-outline',
           label: isLiked ? 'Liked' : 'Like',
         } as ActionItem,
+        ...(isGiftEnabled
+          ? [{ key: 'gift', icon: 'gift-outline', label: 'Gift' } as ActionItem]
+          : []),
         { key: 'share', icon: 'share-social', label: 'Share' },
         { key: 'chat', icon: 'chatbubble-ellipses', label: 'Chat' },
         { key: 'stage', icon: 'people', label: 'Stage' },
@@ -397,6 +408,23 @@ export function DebateRoomScreen({
     };
   }, []);
 
+  // Gift event subscription — delivers real-time gift overlays
+  useEffect(() => {
+    if (!liveDebateId) return;
+    const channel = subscribeToGiftEvents(liveDebateId, (event) => {
+      setGiftOverlayItems((prev) => [
+        ...prev,
+        {
+          id: event.id,
+          giftTypeId: event.gift_type_id,
+          senderName: event.sender_name,
+          xPercent: Math.floor(Math.random() * 55) + 5,
+        },
+      ]);
+    });
+    return () => { unsubscribeFromChannel(channel); };
+  }, [liveDebateId]);
+
   async function handleActionPress(actionKey: string) {
     if (actionKey === 'like') {
       onToggleLike?.();
@@ -414,6 +442,11 @@ export function DebateRoomScreen({
       } catch {
         // Ignore share sheet cancellations.
       }
+      return;
+    }
+
+    if (actionKey === 'gift') {
+      setIsGiftPickerOpen(true);
       return;
     }
 
@@ -460,6 +493,10 @@ export function DebateRoomScreen({
           : participant,
       ),
     );
+  }
+
+  function removeGiftOverlayItem(id: string) {
+    setGiftOverlayItems((prev) => prev.filter((item) => item.id !== id));
   }
 
   async function handleSendMessage() {
@@ -511,6 +548,9 @@ export function DebateRoomScreen({
           {!showCameraPreview ? <View style={styles.backgroundGlowBottom} /> : null}
         </>
       )}
+
+      {/* Gift floating overlays */}
+      <GiftOverlay items={giftOverlayItems} onItemDone={removeGiftOverlayItem} />
 
       {/* Top bar */}
       <View style={styles.topBar}>
@@ -601,6 +641,19 @@ export function DebateRoomScreen({
           </Pressable>
         </View>
       </View>
+
+      {/* Gift picker modal */}
+      {isGiftEnabled && currentUser && hostUserId ? (
+        <GiftPicker
+          visible={isGiftPickerOpen}
+          onClose={() => setIsGiftPickerOpen(false)}
+          senderId={currentUser.id}
+          senderName={currentUser.name}
+          recipientId={hostUserId}
+          debateId={liveDebateId!}
+          onGiftSent={() => setIsGiftPickerOpen(false)}
+        />
+      ) : null}
 
       {/* Stage management modal */}
       <Modal

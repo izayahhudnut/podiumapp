@@ -30,12 +30,17 @@ import {
   getLikedDebateIds,
   likeDebate,
   unlikeDebate,
+  getSavedDebates,
+  getSavedDebateIds,
+  saveDebate,
+  unsaveDebate,
   upsertProfile,
   type ProfileRecord,
 } from './src/lib/profile';
 import type { EditProfileValues } from './src/screens/ProfileScreen';
 import {
   createDebate,
+  deleteDebate,
   endDebate,
   getPublicLiveDebates,
   getPublicScheduledDebates,
@@ -206,6 +211,8 @@ export default function App() {
   const [userDebates, setUserDebates] = useState<DebateRecord[]>([]);
   const [likedDebates, setLikedDebates] = useState<DebateRecord[]>([]);
   const [likedDebateIds, setLikedDebateIds] = useState<Set<string>>(new Set());
+  const [savedDebates, setSavedDebates] = useState<DebateRecord[]>([]);
+  const [savedDebateIds, setSavedDebateIds] = useState<Set<string>>(new Set());
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [presenceSnapshots, setPresenceSnapshots] = useState<Record<string, DebatePresenceState>>(
@@ -240,6 +247,12 @@ export default function App() {
   );
 
   const likedDebateItems: DebateCardItem[] = likedDebates.map((debate) =>
+    debate.status === 'live'
+      ? mapLiveDebateToCard(debate, presenceSnapshots[debate.id])
+      : mapScheduledDebateToCard(debate),
+  );
+
+  const savedDebateItems: DebateCardItem[] = savedDebates.map((debate) =>
     debate.status === 'live'
       ? mapLiveDebateToCard(debate, presenceSnapshots[debate.id])
       : mapScheduledDebateToCard(debate),
@@ -292,6 +305,8 @@ export default function App() {
       setUserDebates([]);
       setLikedDebates([]);
       setLikedDebateIds(new Set());
+      setSavedDebates([]);
+      setSavedDebateIds(new Set());
       setDebatesLoading(false);
       setDebatesError(null);
       return;
@@ -326,17 +341,21 @@ export default function App() {
 
       // Profile data is secondary — don't let failures block the debates feed
       try {
-        const [profile, myDebates, myLiked, myLikedIds] = await Promise.all([
+        const [profile, myDebates, myLiked, myLikedIds, mySaved, mySavedIds] = await Promise.all([
           getOrCreateProfile(userId),
           getUserDebates(userId),
           getLikedDebates(userId),
           getLikedDebateIds(userId),
+          getSavedDebates(userId),
+          getSavedDebateIds(userId),
         ]);
         if (active) {
           setUserProfile(profile);
           setUserDebates(myDebates);
           setLikedDebates(myLiked);
           setLikedDebateIds(new Set(myLikedIds));
+          setSavedDebates(mySaved);
+          setSavedDebateIds(new Set(mySavedIds));
         }
       } catch {
         // Profile tables may not exist yet — silently ignore
@@ -502,6 +521,8 @@ export default function App() {
       setUserDebates([]);
       setLikedDebates([]);
       setLikedDebateIds(new Set());
+      setSavedDebates([]);
+      setSavedDebateIds(new Set());
       setActiveLiveDebate(null);
       setAuthVariant('sign-in');
       setPassword('');
@@ -571,6 +592,58 @@ export default function App() {
         if (alreadyLiked) next.add(debateId); else next.delete(debateId);
         return next;
       });
+    }
+  }
+
+  async function handleToggleSave(debateId: string) {
+    if (!session) return;
+    const alreadySaved = savedDebateIds.has(debateId);
+    // Optimistic update
+    setSavedDebateIds((prev) => {
+      const next = new Set(prev);
+      if (alreadySaved) next.delete(debateId); else next.add(debateId);
+      return next;
+    });
+    try {
+      if (alreadySaved) {
+        await unsaveDebate(session.user.id, debateId);
+        setSavedDebates((prev) => prev.filter((d) => d.id !== debateId));
+      } else {
+        await saveDebate(session.user.id, debateId);
+        const debate =
+          userDebates.find((d) => d.id === debateId) ??
+          publicLiveDebates.find((d) => d.id === debateId) ??
+          publicScheduledDebates.find((d) => d.id === debateId) ??
+          likedDebates.find((d) => d.id === debateId);
+        if (debate) {
+          setSavedDebates((prev) => [debate, ...prev]);
+        }
+      }
+    } catch {
+      // Revert optimistic update on failure
+      setSavedDebateIds((prev) => {
+        const next = new Set(prev);
+        if (alreadySaved) next.add(debateId); else next.delete(debateId);
+        return next;
+      });
+    }
+  }
+
+  async function handleDeleteDebate(debateId: string) {
+    if (!session) return;
+    try {
+      await deleteDebate(debateId, session.user.id);
+      setUserDebates((prev) => prev.filter((d) => d.id !== debateId));
+      setPublicLiveDebates((prev) => prev.filter((d) => d.id !== debateId));
+      setPublicScheduledDebates((prev) => prev.filter((d) => d.id !== debateId));
+      setSavedDebates((prev) => prev.filter((d) => d.id !== debateId));
+      setSavedDebateIds((prev) => {
+        const next = new Set(prev);
+        next.delete(debateId);
+        return next;
+      });
+    } catch (error) {
+      setDebatesError(error instanceof Error ? error.message : 'Unable to delete the debate.');
     }
   }
 
@@ -767,11 +840,15 @@ export default function App() {
             debateCount={userDebates.length}
             debates={profileDebateItems}
             likedDebates={likedDebateItems}
+            savedDebates={savedDebateItems}
+            savedDebateIds={savedDebateIds}
             editSubmitting={editSubmitting}
             editError={editError}
             onEditProfile={handleEditProfile}
             onSignOut={handleSignOut}
             onOpenDebate={handleOpenDebate}
+            onSaveDebate={(id) => void handleToggleSave(id)}
+            onDeleteDebate={(id) => void handleDeleteDebate(id)}
           />
         ) : null}
 

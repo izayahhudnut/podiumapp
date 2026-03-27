@@ -124,3 +124,58 @@ export async function unlikeDebate(userId: string, debateId: string): Promise<vo
     throw error;
   }
 }
+
+export async function getSavedDebates(userId: string): Promise<DebateRecord[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('debate_saves')
+    .select('debates(*)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .returns<{ debates: DebateRecord }[]>();
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => row.debates).filter(Boolean);
+}
+
+export async function getSavedDebateIds(userId: string): Promise<string[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('debate_saves')
+    .select('debate_id')
+    .eq('user_id', userId)
+    .returns<{ debate_id: string }[]>();
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => row.debate_id);
+}
+
+export async function saveDebate(userId: string, debateId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('debate_saves')
+    .upsert({ user_id: userId, debate_id: debateId }, { onConflict: 'user_id,debate_id' });
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function unsaveDebate(userId: string, debateId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('debate_saves')
+    .delete()
+    .eq('user_id', userId)
+    .eq('debate_id', debateId);
+
+  if (error) {
+    throw error;
+  }
+}
