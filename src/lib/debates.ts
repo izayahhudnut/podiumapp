@@ -230,6 +230,33 @@ export function subscribeToDebateMessages(
   return channel;
 }
 
+export function subscribeToDebateEnd(
+  debateId: string,
+  onEnd: () => void,
+): RealtimeChannel {
+  const supabase = getSupabaseClient();
+  const channel = supabase.channel(`debate-end:${debateId}`);
+
+  channel.on(
+    'postgres_changes',
+    {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'debates',
+      filter: `id=eq.${debateId}`,
+    },
+    (payload) => {
+      const updated = payload.new as { status: string };
+      if (updated.status === 'ended') {
+        onEnd();
+      }
+    },
+  );
+
+  channel.subscribe();
+  return channel;
+}
+
 export function subscribeToDebates(
   onChange: (payload: DebateChangePayload) => void,
 ) {

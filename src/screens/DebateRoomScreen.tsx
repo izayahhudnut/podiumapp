@@ -34,6 +34,7 @@ import type {
 import {
   getDebateMessages,
   sendDebateMessage,
+  subscribeToDebateEnd,
   subscribeToDebatePresence,
   subscribeToDebateMessages,
   unsubscribeFromChannel,
@@ -408,6 +409,13 @@ export function DebateRoomScreen({
     };
   }, []);
 
+  // End-stream subscription — closes the room for all viewers when host ends the debate
+  useEffect(() => {
+    if (!liveDebateId) return;
+    const channel = subscribeToDebateEnd(liveDebateId, onClose);
+    return () => { unsubscribeFromChannel(channel); };
+  }, [liveDebateId, onClose]);
+
   // Gift event subscription — delivers real-time gift overlays
   useEffect(() => {
     if (!liveDebateId) return;
@@ -541,7 +549,7 @@ export function DebateRoomScreen({
         </View>
       ) : (
         <>
-          {showCameraPreview && permission?.granted ? (
+          {showCameraPreview && cameraEnabled && permission?.granted ? (
             <CameraView facing="front" style={styles.cameraBackground} />
           ) : null}
           {!showCameraPreview ? <View style={styles.backgroundGlowTop} /> : null}
