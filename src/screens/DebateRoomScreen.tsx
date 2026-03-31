@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ComponentProps } from 'react';
+import * as Linking from 'expo-linking';
 import {
   Keyboard,
   Modal,
@@ -33,8 +34,10 @@ import type {
 } from '../lib/debates';
 import {
   getDebateMessages,
+  getLikeCount,
   sendDebateMessage,
   subscribeToDebateEnd,
+  subscribeToDebateLikeCount,
   subscribeToDebatePresence,
   subscribeToDebateMessages,
   unsubscribeFromChannel,
@@ -96,6 +99,12 @@ function mergeMessages(current: LiveCommentItem[], nextMessage: LiveCommentItem)
 
 function getParticipantId(name: string, avatar: string) {
   return `${name.trim().toLowerCase().replace(/\s+/g, '-')}:${avatar}`;
+}
+
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
 }
 
 function getHostParticipant(
@@ -208,6 +217,7 @@ export function DebateRoomScreen({
   const [isGiftPickerOpen, setIsGiftPickerOpen] = useState(false);
   const [isInfoSheetOpen, setIsInfoSheetOpen] = useState(false);
   const [giftOverlayItems, setGiftOverlayItems] = useState<GiftOverlayItem[]>([]);
+  const [likeCount, setLikeCount] = useState(0);
   const [permission] = useCameraPermissions();
 
   // LiveKit state
@@ -430,6 +440,21 @@ export function DebateRoomScreen({
     return () => { unsubscribeFromChannel(channel); };
   }, [liveDebateId, onClose]);
 
+  // Like count — load initial count and track live changes
+  useEffect(() => {
+    if (!liveDebateId) return;
+    let active = true;
+    getLikeCount(liveDebateId).then((n) => { if (active) setLikeCount(n); }).catch(() => {});
+    const channel = subscribeToDebateLikeCount(liveDebateId, (delta) => {
+      if (!active) return;
+      setLikeCount((prev) => Math.max(0, prev + delta));
+    });
+    return () => {
+      active = false;
+      unsubscribeFromChannel(channel);
+    };
+  }, [liveDebateId]);
+
   // Gift event subscription — delivers real-time gift overlays
   useEffect(() => {
     if (!liveDebateId) return;
@@ -465,7 +490,13 @@ export function DebateRoomScreen({
 
     if (actionKey === 'share') {
       try {
-        await Share.share({ message: `Join my live debate on Podium: ${title}` });
+        const debateId = liveDebateId ?? debate.id;
+        const deepLink = Linking.createURL(`debate/${debateId}`);
+        await Share.share({
+          title,
+          message: `Watch "${title}" live on Podium — ${deepLink}`,
+          url: deepLink,
+        });
       } catch {
         // Ignore share sheet cancellations.
       }
@@ -599,6 +630,10 @@ export function DebateRoomScreen({
         <View style={styles.topControls}>
           <View style={styles.liveBadge}>
             <Text style={styles.liveBadgeText}>LIVE</Text>
+          </View>
+          <View style={styles.likeCountPill}>
+            <Ionicons name="heart" size={12} color="#FF4D6D" />
+            <Text style={styles.likeCountText}>{formatCount(likeCount)}</Text>
           </View>
           <View style={styles.viewerPill}>
             <Text style={styles.viewerText}>{viewerLabel}</Text>
@@ -1006,6 +1041,21 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 11,
     fontWeight: '700',
+  },
+  likeCountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: radii.pill,
+    borderCurve: 'continuous',
+    backgroundColor: colors.overlayStrong,
+  },
+  likeCountText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
   },
   viewerPill: {
     paddingHorizontal: spacing.sm,

@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
+import * as Linking from 'expo-linking';
 import { StyleSheet, View } from 'react-native';
 import type { RealtimeChannel, Session } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
@@ -302,6 +303,14 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, [configError]);
+
+  // Deep link handling — opens a debate room from a shared link
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', ({ url }) => handleDeepLink(url));
+    Linking.getInitialURL().then((url) => handleDeepLink(url)).catch(() => {});
+    return () => subscription.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicLiveDebates]);
 
   // Load debates when session is ready
   useEffect(() => {
@@ -646,6 +655,18 @@ export default function App() {
         if (alreadySaved) next.add(debateId); else next.delete(debateId);
         return next;
       });
+    }
+  }
+
+  function handleDeepLink(url: string | null) {
+    if (!url) return;
+    const { path } = Linking.parse(url);
+    const match = path?.match(/^debate\/([^/]+)$/);
+    if (!match) return;
+    const debateId = match[1];
+    const debate = publicLiveDebates.find((d) => d.id === debateId);
+    if (debate) {
+      handleOpenDebate(debateId);
     }
   }
 

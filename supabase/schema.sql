@@ -315,6 +315,13 @@ exception
   when duplicate_object then null;
 end $$;
 
+do $$
+begin
+  alter publication supabase_realtime add table public.debate_likes;
+exception
+  when duplicate_object then null;
+end $$;
+
 insert into storage.buckets (id, name, public)
 values ('debate-thumbnails', 'debate-thumbnails', true)
 on conflict (id) do nothing;

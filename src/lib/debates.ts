@@ -230,6 +230,38 @@ export function subscribeToDebateMessages(
   return channel;
 }
 
+export async function getLikeCount(debateId: string): Promise<number> {
+  const supabase = getSupabaseClient();
+  const { count } = await supabase
+    .from('debate_likes')
+    .select('id', { count: 'exact', head: true })
+    .eq('debate_id', debateId);
+  return count ?? 0;
+}
+
+export function subscribeToDebateLikeCount(
+  debateId: string,
+  onChange: (delta: number) => void,
+): RealtimeChannel {
+  const supabase = getSupabaseClient();
+  const channel = supabase.channel(`debate-likes:${debateId}`);
+
+  channel.on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'debate_likes', filter: `debate_id=eq.${debateId}` },
+    () => onChange(1),
+  );
+
+  channel.on(
+    'postgres_changes',
+    { event: 'DELETE', schema: 'public', table: 'debate_likes', filter: `debate_id=eq.${debateId}` },
+    () => onChange(-1),
+  );
+
+  channel.subscribe();
+  return channel;
+}
+
 export function subscribeToDebateEnd(
   debateId: string,
   onEnd: () => void,
