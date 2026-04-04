@@ -16,6 +16,10 @@ export type DebateRecord = {
   fact_check_enabled: boolean;
   audience_comments_enabled: boolean;
   ask_to_join_enabled: boolean;
+  ended_at: string | null;
+  total_joined_count: number;
+  total_message_count: number;
+  duration_seconds: number;
   created_at: string;
 };
 
@@ -173,9 +177,13 @@ export async function startScheduledDebate(debateId: string, hostUserId: string)
 export async function endDebate(debateId: string, hostUserId: string) {
   return withTrace('debates.end', { feature: 'debates', 'debate.id': debateId }, async () => {
     const supabase = getSupabaseClient();
+    const endedAt = new Date().toISOString();
     const { data, error } = await supabase
       .from('debates')
-      .update({ status: 'ended' })
+      .update({
+        status: 'ended',
+        ended_at: endedAt,
+      })
       .eq('id', debateId)
       .eq('host_user_id', hostUserId)
       .select('*')
@@ -212,6 +220,48 @@ export async function deleteDebate(debateId: string, hostUserId: string) {
   if (error) {
     throw error;
   }
+}
+
+export async function endDebateWithStats(
+  debateId: string,
+  hostUserId: string,
+  stats: { totalJoinedCount: number; totalMessageCount: number; durationSeconds: number },
+) {
+  return withTrace('debates.end_with_stats', { feature: 'debates', 'debate.id': debateId }, async () => {
+    const supabase = getSupabaseClient();
+    const endedAt = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('debates')
+      .update({
+        status: 'ended',
+        ended_at: endedAt,
+        total_joined_count: stats.totalJoinedCount,
+        total_message_count: stats.totalMessageCount,
+        duration_seconds: stats.durationSeconds,
+      })
+      .eq('id', debateId)
+      .eq('host_user_id', hostUserId)
+      .select('*')
+      .single<DebateRecord>();
+
+    if (error) {
+      await trackLog({
+        eventName: 'debates.end_with_stats.failed',
+        severity: 'ERROR',
+        body: error.message,
+        attributes: { feature: 'debates', 'debate.id': debateId },
+      });
+      throw error;
+    }
+
+    await trackLog({
+      eventName: 'debates.end_with_stats.succeeded',
+      body: { debateId: data.id, totalJoinedCount: stats.totalJoinedCount },
+      attributes: { feature: 'debates', 'debate.id': debateId },
+    });
+
+    return data;
+  });
 }
 
 export async function getPublicLiveDebates() {

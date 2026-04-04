@@ -60,6 +60,17 @@ function getInitials(name: string) {
   );
 }
 
+function formatDuration(durationSeconds?: number) {
+  const totalSeconds = durationSeconds ?? 0;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 export function ProfileScreen({
   userName,
   userEmail,
@@ -83,6 +94,7 @@ export function ProfileScreen({
 }: ProfileScreenProps) {
   const [tab, setTab] = useState<Tab>('debates');
   const [isEditing, setIsEditing] = useState(false);
+  const [selectedDebateStats, setSelectedDebateStats] = useState<DebateCardItem | null>(null);
 
   // Edit form state
   const [editName, setEditName] = useState(userName);
@@ -138,6 +150,15 @@ export function ProfileScreen({
         { text: 'Delete', style: 'destructive', onPress: () => onDeleteDebate(debateId) },
       ],
     );
+  }
+
+  function handlePressDebate(debate: DebateCardItem) {
+    if (debate.status === 'ended') {
+      setSelectedDebateStats(debate);
+      return;
+    }
+
+    onOpenDebate(debate.id);
   }
 
   return (
@@ -235,7 +256,7 @@ export function ProfileScreen({
               >
                 <DebateCard
                   debate={debate}
-                  onPress={() => onOpenDebate(debate.id)}
+                  onPress={() => handlePressDebate(debate)}
                   compact
                 />
                 <View style={styles.cardActions}>
@@ -373,6 +394,60 @@ export function ProfileScreen({
               </Pressable>
             </ScrollView>
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={selectedDebateStats != null}
+        onRequestClose={() => setSelectedDebateStats(null)}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setSelectedDebateStats(null)}
+          />
+
+          {selectedDebateStats ? (
+            <View style={styles.editSheet}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>Debate Stats</Text>
+                <Pressable
+                  onPress={() => setSelectedDebateStats(null)}
+                  style={({ pressed }) => [styles.closeBtn, pressed && styles.pressed]}
+                >
+                  <Ionicons name="close" size={20} color={colors.textPrimary} />
+                </Pressable>
+              </View>
+
+              <View style={styles.statsSheetBlock}>
+                <Text style={styles.statsDebateTitle}>{selectedDebateStats.title}</Text>
+
+                <View style={styles.statsCard}>
+                  <Text style={styles.statsCardValue}>
+                    {selectedDebateStats.totalJoinedCount ?? 0}
+                  </Text>
+                  <Text style={styles.statsCardLabel}>People Joined</Text>
+                </View>
+
+                <View style={styles.statsCard}>
+                  <Text style={styles.statsCardValue}>
+                    {selectedDebateStats.totalMessageCount ?? 0}
+                  </Text>
+                  <Text style={styles.statsCardLabel}>Messages</Text>
+                </View>
+
+                <View style={styles.statsCard}>
+                  <Text style={styles.statsCardValue}>
+                    {formatDuration(selectedDebateStats.durationSeconds)}
+                  </Text>
+                  <Text style={styles.statsCardLabel}>Duration</Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
         </View>
       </Modal>
     </>
@@ -633,6 +708,34 @@ const styles = StyleSheet.create({
   editForm: {
     gap: spacing.lg,
     paddingBottom: spacing.xl,
+  },
+  statsSheetBlock: {
+    gap: spacing.md,
+  },
+  statsDebateTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '500',
+  },
+  statsCard: {
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    borderCurve: 'continuous',
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    gap: spacing.xs,
+  },
+  statsCardValue: {
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '600',
+  },
+  statsCardLabel: {
+    color: colors.textDim,
+    fontSize: 13,
+    fontWeight: '400',
   },
   avatarPickerRow: {
     flexDirection: 'row',

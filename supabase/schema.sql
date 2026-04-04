@@ -10,6 +10,10 @@ create table if not exists public.debates (
   fact_check_enabled boolean not null default true,
   audience_comments_enabled boolean not null default true,
   ask_to_join_enabled boolean not null default true,
+  ended_at timestamptz,
+  total_joined_count integer not null default 0,
+  total_message_count integer not null default 0,
+  duration_seconds integer not null default 0,
   status text not null default 'live' check (status in ('live', 'scheduled', 'ended')),
   scheduled_for timestamptz,
   thumbnail_url text,
@@ -21,6 +25,10 @@ alter table public.debates add column if not exists thumbnail_url text;
 alter table public.debates add column if not exists fact_check_enabled boolean not null default true;
 alter table public.debates add column if not exists audience_comments_enabled boolean not null default true;
 alter table public.debates add column if not exists ask_to_join_enabled boolean not null default true;
+alter table public.debates add column if not exists ended_at timestamptz;
+alter table public.debates add column if not exists total_joined_count integer not null default 0;
+alter table public.debates add column if not exists total_message_count integer not null default 0;
+alter table public.debates add column if not exists duration_seconds integer not null default 0;
 
 create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),

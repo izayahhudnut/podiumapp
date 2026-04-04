@@ -4,6 +4,7 @@ export type DebateCardItem = {
   host: string;
   hostAvatar: string;
   hostId?: string;
+  status?: 'live' | 'scheduled' | 'ended';
   isLive: boolean;
   viewers: string;
   topic: string;
@@ -11,6 +12,9 @@ export type DebateCardItem = {
   startedAt?: string;
   scheduledFor?: string;
   image?: string;
+  totalJoinedCount?: number;
+  totalMessageCount?: number;
+  durationSeconds?: number;
 };
 
 export type FactCheckItem = {

@@ -48,6 +48,8 @@ import {
   createDebate,
   deleteDebate,
   endDebate,
+  endDebateWithStats,
+  getDebateMessages,
   getPublicLiveDebates,
   getPublicScheduledDebates,
   startScheduledDebate,
@@ -176,6 +178,7 @@ function mapLiveDebateToCard(
     host: hostName,
     hostAvatar: hostPresence?.user_avatar ?? currentUserAvatar ?? getInitials(hostName),
     hostId: debate.host_user_id,
+    status: 'live',
     isLive: true,
     viewers: new Intl.NumberFormat('en-US').format(viewerCount),
     topic: debate.topic,
@@ -195,12 +198,39 @@ function mapScheduledDebateToCard(
     host: 'You',
     hostAvatar: currentUserAvatar ?? 'PD',
     hostId: debate.host_user_id,
+    status: debate.status,
     isLive: false,
     viewers: '0',
     topic: debate.topic,
     isPublic: debate.is_public,
     scheduledFor: debate.scheduled_for ? formatScheduledFor(debate.scheduled_for) : undefined,
     image: debate.thumbnail_url ?? undefined,
+    totalJoinedCount: debate.total_joined_count,
+    totalMessageCount: debate.total_message_count,
+    durationSeconds: debate.duration_seconds,
+  };
+}
+
+function mapEndedDebateToCard(
+  debate: DebateRecord,
+  currentUserAvatar?: string,
+): DebateCardItem {
+  return {
+    id: debate.id,
+    title: debate.title,
+    host: 'You',
+    hostAvatar: currentUserAvatar ?? 'PD',
+    hostId: debate.host_user_id,
+    status: 'ended',
+    isLive: false,
+    viewers: new Intl.NumberFormat('en-US').format(debate.total_joined_count),
+    topic: debate.topic,
+    isPublic: debate.is_public,
+    scheduledFor: 'Ended',
+    image: debate.thumbnail_url ?? undefined,
+    totalJoinedCount: debate.total_joined_count,
+    totalMessageCount: debate.total_message_count,
+    durationSeconds: debate.duration_seconds,
   };
 }
 
@@ -274,7 +304,9 @@ export default function App() {
   const profileDebateItems: DebateCardItem[] = userDebates.map((debate) =>
     debate.status === 'live'
       ? mapLiveDebateToCard(debate, presenceSnapshots[debate.id], currentUserAvatar)
-      : mapScheduledDebateToCard(debate, currentUserAvatar),
+      : debate.status === 'ended'
+        ? mapEndedDebateToCard(debate, currentUserAvatar)
+        : mapScheduledDebateToCard(debate, currentUserAvatar),
   );
 
   const likedDebateItems: DebateCardItem[] = likedDebates.map((debate) =>
@@ -914,7 +946,19 @@ export default function App() {
 
     if (activeLiveDebate.host_user_id === session.user.id) {
       try {
-        await endDebate(activeLiveDebate.id, session.user.id);
+        const messages = await getDebateMessages(activeLiveDebate.id);
+        const participantCount = Object.keys(presenceSnapshots[activeLiveDebate.id] ?? {}).length;
+        const durationSeconds = Math.max(
+          0,
+          Math.round(
+            (Date.now() - new Date(activeLiveDebate.created_at).getTime()) / 1000,
+          ),
+        );
+        await endDebateWithStats(activeLiveDebate.id, session.user.id, {
+          totalJoinedCount: participantCount,
+          totalMessageCount: messages.length,
+          durationSeconds,
+        });
         setPublicLiveDebates((current) =>
           current.filter((debate) => debate.id !== activeLiveDebate.id),
         );
