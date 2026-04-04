@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+import { trackLog, withTrace } from './opscompanion';
 import { getSupabaseClient } from './supabase';
 
 export type DebateRecord = {
@@ -12,6 +13,9 @@ export type DebateRecord = {
   status: 'live' | 'scheduled' | 'ended';
   scheduled_for: string | null;
   thumbnail_url: string | null;
+  fact_check_enabled: boolean;
+  audience_comments_enabled: boolean;
+  ask_to_join_enabled: boolean;
   created_at: string;
 };
 
@@ -27,10 +31,28 @@ export type DebatePresencePayload = {
   user_avatar: string | null;
   is_host: boolean;
   joined_at: string;
+  stage_state?: DebateStageState;
+  join_state?: DebateJoinState;
+  request_to_join?: boolean;
   presence_ref?: string;
 };
 
 export type DebatePresenceState = Record<string, DebatePresencePayload[]>;
+
+export type DebateStageParticipantState = {
+  on_stage: boolean;
+  muted: boolean;
+  removed: boolean;
+};
+
+export type DebateStageState = Record<string, DebateStageParticipantState>;
+
+export type DebateJoinParticipantState = {
+  requested: boolean;
+  admitted: boolean;
+};
+
+export type DebateJoinState = Record<string, DebateJoinParticipantState>;
 
 export type DebateMessageRecord = {
   id: string;
@@ -48,6 +70,9 @@ export type CreateDebateInput = {
   topic: string;
   description: string;
   isPublic: boolean;
+  factCheckEnabled: boolean;
+  audienceCommentsEnabled: boolean;
+  askToJoinEnabled: boolean;
   scheduledFor?: string | null;
   thumbnailUrl?: string | null;
 };
@@ -61,62 +86,119 @@ export type SendDebateMessageInput = {
 };
 
 export async function createDebate(input: CreateDebateInput) {
-  const supabase = getSupabaseClient();
-  const isScheduled = Boolean(input.scheduledFor);
-  const { data, error } = await supabase
-    .from('debates')
-    .insert({
-      host_user_id: input.hostUserId,
-      title: input.title,
-      topic: input.topic,
-      description: input.description,
-      is_public: input.isPublic,
-      status: isScheduled ? 'scheduled' : 'live',
-      scheduled_for: input.scheduledFor ?? null,
-      thumbnail_url: input.thumbnailUrl ?? null,
-    })
-    .select('*')
-    .single<DebateRecord>();
+  return withTrace(
+    'debates.create',
+    {
+      feature: 'debates',
+      'debate.is_public': input.isPublic,
+      'debate.is_scheduled': Boolean(input.scheduledFor),
+    },
+    async () => {
+      const supabase = getSupabaseClient();
+      const isScheduled = Boolean(input.scheduledFor);
+      const { data, error } = await supabase
+        .from('debates')
+        .insert({
+          host_user_id: input.hostUserId,
+          title: input.title,
+          topic: input.topic,
+          description: input.description,
+          is_public: input.isPublic,
+          fact_check_enabled: input.factCheckEnabled,
+          audience_comments_enabled: input.audienceCommentsEnabled,
+          ask_to_join_enabled: input.askToJoinEnabled,
+          status: isScheduled ? 'scheduled' : 'live',
+          scheduled_for: input.scheduledFor ?? null,
+          thumbnail_url: input.thumbnailUrl ?? null,
+        })
+        .select('*')
+        .single<DebateRecord>();
 
-  if (error) {
-    throw error;
-  }
+      if (error) {
+        await trackLog({
+          eventName: 'debates.create.failed',
+          severity: 'ERROR',
+          body: error.message,
+          attributes: { feature: 'debates', 'debate.is_public': input.isPublic },
+        });
+        throw error;
+      }
 
-  return data;
+      await trackLog({
+        eventName: 'debates.create.succeeded',
+        body: { debateId: data.id, status: data.status },
+        attributes: { feature: 'debates', 'debate.is_public': data.is_public },
+      });
+
+      return data;
+    },
+  );
 }
 
 export async function startScheduledDebate(debateId: string, hostUserId: string) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('debates')
-    .update({ status: 'live', scheduled_for: null })
-    .eq('id', debateId)
-    .eq('host_user_id', hostUserId)
-    .select('*')
-    .single<DebateRecord>();
+  return withTrace(
+    'debates.start_scheduled',
+    { feature: 'debates', 'debate.id': debateId },
+    async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from('debates')
+        .update({ status: 'live', scheduled_for: null })
+        .eq('id', debateId)
+        .eq('host_user_id', hostUserId)
+        .select('*')
+        .single<DebateRecord>();
 
-  if (error) {
-    throw error;
-  }
+      if (error) {
+        await trackLog({
+          eventName: 'debates.start_scheduled.failed',
+          severity: 'ERROR',
+          body: error.message,
+          attributes: { feature: 'debates', 'debate.id': debateId },
+        });
+        throw error;
+      }
 
-  return data;
+      await trackLog({
+        eventName: 'debates.start_scheduled.succeeded',
+        body: { debateId: data.id },
+        attributes: { feature: 'debates', 'debate.id': debateId },
+      });
+
+      return data;
+    },
+  );
 }
 
 export async function endDebate(debateId: string, hostUserId: string) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('debates')
-    .update({ status: 'ended' })
-    .eq('id', debateId)
-    .eq('host_user_id', hostUserId)
-    .select('*')
-    .single<DebateRecord>();
+  return withTrace('debates.end', { feature: 'debates', 'debate.id': debateId }, async () => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('debates')
+      .update({ status: 'ended' })
+      .eq('id', debateId)
+      .eq('host_user_id', hostUserId)
+      .select('*')
+      .single<DebateRecord>();
 
-  if (error) {
-    throw error;
-  }
+    if (error) {
+      await trackLog({
+        eventName: 'debates.end.failed',
+        severity: 'ERROR',
+        body: error.message,
+        attributes: { feature: 'debates', 'debate.id': debateId },
+      });
+      throw error;
+    }
 
-  return data;
+    await trackLog({
+      eventName: 'debates.end.succeeded',
+      body: { debateId: data.id },
+      attributes: { feature: 'debates', 'debate.id': debateId },
+    });
+
+    return data;
+  });
 }
 
 export async function deleteDebate(debateId: string, hostUserId: string) {
@@ -133,76 +215,118 @@ export async function deleteDebate(debateId: string, hostUserId: string) {
 }
 
 export async function getPublicLiveDebates() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('debates')
-    .select('*')
-    .eq('status', 'live')
-    .eq('is_public', true)
-    .order('created_at', { ascending: false })
-    .returns<DebateRecord[]>();
+  return withTrace('debates.get_public_live', { feature: 'debates' }, async () => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('debates')
+      .select('*')
+      .eq('status', 'live')
+      .eq('is_public', true)
+      .order('created_at', { ascending: false })
+      .returns<DebateRecord[]>();
 
-  if (error) {
-    throw error;
-  }
+    if (error) {
+      await trackLog({
+        eventName: 'debates.get_public_live.failed',
+        severity: 'ERROR',
+        body: error.message,
+        attributes: { feature: 'debates' },
+      });
+      throw error;
+    }
 
-  return data;
+    return data;
+  });
 }
 
 export async function getPublicScheduledDebates() {
-  const supabase = getSupabaseClient();
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from('debates')
-    .select('*')
-    .eq('status', 'scheduled')
-    .eq('is_public', true)
-    .gte('scheduled_for', now)
-    .order('scheduled_for', { ascending: true })
-    .returns<DebateRecord[]>();
+  return withTrace('debates.get_public_scheduled', { feature: 'debates' }, async () => {
+    const supabase = getSupabaseClient();
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('debates')
+      .select('*')
+      .eq('status', 'scheduled')
+      .eq('is_public', true)
+      .gte('scheduled_for', now)
+      .order('scheduled_for', { ascending: true })
+      .returns<DebateRecord[]>();
 
-  if (error) {
-    throw error;
-  }
+    if (error) {
+      await trackLog({
+        eventName: 'debates.get_public_scheduled.failed',
+        severity: 'ERROR',
+        body: error.message,
+        attributes: { feature: 'debates' },
+      });
+      throw error;
+    }
 
-  return data;
+    return data;
+  });
 }
 
 export async function getDebateMessages(debateId: string) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('debate_messages')
-    .select('*')
-    .eq('debate_id', debateId)
-    .order('created_at', { ascending: true })
-    .returns<DebateMessageRecord[]>();
+  return withTrace('debates.get_messages', { feature: 'chat', 'debate.id': debateId }, async () => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('debate_messages')
+      .select('*')
+      .eq('debate_id', debateId)
+      .order('created_at', { ascending: true })
+      .returns<DebateMessageRecord[]>();
 
-  if (error) {
-    throw error;
-  }
+    if (error) {
+      await trackLog({
+        eventName: 'chat.get_messages.failed',
+        severity: 'ERROR',
+        body: error.message,
+        attributes: { feature: 'chat', 'debate.id': debateId },
+      });
+      throw error;
+    }
 
-  return data;
+    return data;
+  });
 }
 
 export async function sendDebateMessage(input: SendDebateMessageInput) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('debate_messages')
-    .insert({
-      debate_id: input.debateId,
-      user_id: input.userId,
-      user_name: input.userName,
-      user_avatar: input.userAvatar ?? null,
-      body: input.body,
-    })
-    .select('*')
-    .single<DebateMessageRecord>();
+  return withTrace(
+    'chat.send_message',
+    { feature: 'chat', 'debate.id': input.debateId },
+    async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from('debate_messages')
+        .insert({
+          debate_id: input.debateId,
+          user_id: input.userId,
+          user_name: input.userName,
+          user_avatar: input.userAvatar ?? null,
+          body: input.body,
+        })
+        .select('*')
+        .single<DebateMessageRecord>();
 
-  if (error) {
-    throw error;
-  }
+      if (error) {
+        await trackLog({
+          eventName: 'chat.send_message.failed',
+          severity: 'ERROR',
+          body: error.message,
+          attributes: { feature: 'chat', 'debate.id': input.debateId },
+        });
+        throw error;
+      }
 
-  return data;
+      await trackLog({
+        eventName: 'chat.send_message.succeeded',
+        body: { messageId: data.id },
+        attributes: { feature: 'chat', 'debate.id': input.debateId },
+      });
+
+      return data;
+    },
+  );
 }
 
 export function subscribeToDebateMessages(

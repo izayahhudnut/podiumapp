@@ -20,6 +20,9 @@ export type CreateDebateValues = {
   topic: string;
   description: string;
   isPublic: boolean;
+  factCheckEnabled: boolean;
+  audienceCommentsEnabled: boolean;
+  askToJoinEnabled: boolean;
   scheduledFor: string | null;
   thumbnailUri: string | null;
 };
@@ -149,6 +152,9 @@ export function CreateDebateScreen({
       topic: topic.trim(),
       description: description.trim(),
       isPublic,
+      factCheckEnabled: tools.factCheck,
+      audienceCommentsEnabled: tools.audienceComments,
+      askToJoinEnabled: tools.askToJoin,
       scheduledFor,
       thumbnailUri,
     });

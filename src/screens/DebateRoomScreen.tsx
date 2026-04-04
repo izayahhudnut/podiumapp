@@ -28,9 +28,11 @@ try {
 
 import { DebateCardItem, liveRoom } from '../data/mockDebates';
 import type {
+  DebateJoinState,
   DebateMessageRecord,
   DebatePresenceState,
   DebateRecord,
+  DebateStageState,
 } from '../lib/debates';
 import {
   getDebateMessages,
@@ -43,6 +45,7 @@ import {
   unsubscribeFromChannel,
 } from '../lib/debates';
 import { fetchLivekitToken } from '../lib/livekit';
+import { trackLog } from '../lib/opscompanion';
 import { colors, radii, spacing } from '../theme';
 import { FactCheckStrip } from '../components/FactCheckStrip';
 import { GiftOverlay, type GiftOverlayItem } from '../components/GiftOverlay';
@@ -59,6 +62,12 @@ type DebateRoomScreenProps = {
     name: string;
     avatar: string;
   };
+  mediaParticipant?: {
+    id: string;
+    name: string;
+    avatar: string;
+  };
+  canUseRealtimeFeatures?: boolean;
   showCameraPreview?: boolean;
   isLiked?: boolean;
   onToggleLike?: () => void;
@@ -78,6 +87,8 @@ type StageParticipant = {
   name: string;
   avatar: string;
   role: 'host' | 'guest';
+  admitted: boolean;
+  requestingToJoin: boolean;
   onStage: boolean;
   muted: boolean;
   removed: boolean;
@@ -117,6 +128,8 @@ function getHostParticipant(
       name: currentUser.name,
       avatar: currentUser.avatar,
       role: 'host',
+      admitted: true,
+      requestingToJoin: false,
       onStage: true,
       muted: false,
       removed: false,
@@ -129,6 +142,8 @@ function getHostParticipant(
       name: debate.host,
       avatar: debate.hostAvatar,
       role: 'host',
+      admitted: true,
+      requestingToJoin: false,
       onStage: true,
       muted: false,
       removed: false,
@@ -140,6 +155,8 @@ function getHostParticipant(
     name: 'Host',
     avatar: 'PD',
     role: 'host',
+    admitted: true,
+    requestingToJoin: false,
     onStage: true,
     muted: false,
     removed: false,
@@ -149,21 +166,34 @@ function getHostParticipant(
 function getParticipantFromPresence(
   state: DebatePresenceState,
   current: StageParticipant[],
+  requiresAdmission: boolean,
 ) {
+  const hostStageState = Object.values(state)
+    .flat()
+    .find((presence) => presence.is_host)?.stage_state;
+  const hostJoinState = Object.values(state)
+    .flat()
+    .find((presence) => presence.is_host)?.join_state;
   const next = new Map(current.map((participant) => [participant.id, participant]));
 
   Object.values(state)
     .flat()
     .forEach((presence) => {
       const existing = next.get(presence.user_id);
+      const stageState = hostStageState?.[presence.user_id];
+      const joinState = hostJoinState?.[presence.user_id];
       next.set(presence.user_id, {
         id: presence.user_id,
         name: presence.user_name,
         avatar: presence.user_avatar ?? 'PD',
         role: presence.is_host ? 'host' : 'guest',
-        onStage: existing?.onStage ?? presence.is_host,
-        muted: existing?.muted ?? false,
-        removed: false,
+        admitted: presence.is_host ? true : joinState?.admitted ?? !requiresAdmission,
+        requestingToJoin:
+          !presence.is_host &&
+          (joinState?.requested ?? (requiresAdmission ? presence.request_to_join ?? true : false)),
+        onStage: stageState?.on_stage ?? existing?.onStage ?? presence.is_host,
+        muted: stageState?.muted ?? existing?.muted ?? false,
+        removed: stageState?.removed ?? false,
       });
     });
 
@@ -176,9 +206,31 @@ function getParticipantFromMessage(message: LiveCommentItem): StageParticipant {
     name: message.user,
     avatar: message.userAvatar,
     role: 'guest',
+    admitted: true,
+    requestingToJoin: false,
     onStage: false,
     muted: false,
     removed: false,
+  };
+}
+
+function isDebatePublic(debate: DebateCardItem | DebateRecord) {
+  return 'is_public' in debate ? debate.is_public : debate.isPublic;
+}
+
+function getDebateFeatureSettings(debate: DebateCardItem | DebateRecord) {
+  if ('fact_check_enabled' in debate) {
+    return {
+      factCheckEnabled: debate.fact_check_enabled,
+      audienceCommentsEnabled: debate.audience_comments_enabled,
+      askToJoinEnabled: debate.ask_to_join_enabled,
+    };
+  }
+
+  return {
+    factCheckEnabled: true,
+    audienceCommentsEnabled: true,
+    askToJoinEnabled: !debate.isPublic,
   };
 }
 
@@ -199,6 +251,8 @@ export function DebateRoomScreen({
   room,
   liveDebateId,
   currentUser,
+  mediaParticipant,
+  canUseRealtimeFeatures = false,
   showCameraPreview = false,
   isLiked = false,
   onToggleLike,
@@ -225,15 +279,36 @@ export function DebateRoomScreen({
   const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(showCameraPreview);
+  const presenceChannelRef = useRef<ReturnType<typeof subscribeToDebatePresence> | null>(null);
 
-  const isRealtimeRoom = Boolean(liveDebateId && currentUser);
+  const activeMediaParticipant = mediaParticipant ?? currentUser;
+  const isRealtimeRoom = Boolean(liveDebateId && canUseRealtimeFeatures && currentUser);
   const hostUserId =
     'host_user_id' in debate ? debate.host_user_id : (debate.hostId ?? null);
   const isGiftEnabled = isRealtimeRoom && Boolean(hostUserId) && currentUser?.id !== hostUserId;
   const hostParticipant = getHostParticipant(debate, currentUser);
-  const visibleParticipants = sortParticipants(
-    participants.filter((participant) => !participant.removed),
+  const { factCheckEnabled, audienceCommentsEnabled, askToJoinEnabled } =
+    getDebateFeatureSettings(debate);
+  const isPrivateDebate = !isDebatePublic(debate);
+  const isLiveCreator = Boolean(
+    currentUser && 'host_user_id' in debate && debate.host_user_id === currentUser.id,
   );
+  const requiresAdmission = isPrivateDebate && askToJoinEnabled;
+  const visibleParticipants = sortParticipants(
+    participants.filter(
+      (participant) => !participant.removed && (participant.admitted || participant.role === 'host'),
+    ),
+  );
+  const pendingParticipants = sortParticipants(
+    participants.filter(
+      (participant) =>
+        participant.requestingToJoin && !participant.admitted && !participant.removed,
+    ),
+  );
+  const currentParticipant = currentUser
+    ? participants.find((participant) => participant.id === currentUser.id)
+    : null;
+  const hasLiveAccess = !requiresAdmission || isLiveCreator || currentParticipant?.admitted === true;
   const title = 'title' in debate ? debate.title : '';
   const topic = debate.topic ?? '';
   const description = 'description' in debate ? (debate.description ?? '') : '';
@@ -267,9 +342,11 @@ export function DebateRoomScreen({
           ? [{ key: 'gift', icon: 'gift-outline', label: 'Gift' } as ActionItem]
           : []),
         { key: 'share', icon: 'share-social', label: 'Share' },
-        { key: 'chat', icon: 'chatbubble-ellipses', label: 'Chat' },
-        { key: 'stage', icon: 'people', label: 'Stage' },
-        ...(showCameraPreview
+        ...(audienceCommentsEnabled && hasLiveAccess
+          ? [{ key: 'chat', icon: 'chatbubble-ellipses', label: 'Chat' } as ActionItem]
+          : []),
+        ...(isLiveCreator ? [{ key: 'stage', icon: 'people', label: 'Stage' } as ActionItem] : []),
+        ...(showCameraPreview && hasLiveAccess
           ? [
               {
                 key: 'mic',
@@ -289,31 +366,43 @@ export function DebateRoomScreen({
 
   // Fetch LiveKit token
   useEffect(() => {
-    if (!liveDebateId || !currentUser) {
+    if (!liveDebateId || !activeMediaParticipant || !hasLiveAccess) {
       return;
     }
 
     let active = true;
 
-    fetchLivekitToken(liveDebateId, currentUser.name, showCameraPreview)
+    fetchLivekitToken(liveDebateId, activeMediaParticipant.name, showCameraPreview)
       .then(({ token, url }) => {
         if (active) {
           setLivekitToken(token);
           setLivekitUrl(url);
         }
+        void trackLog({
+          eventName: 'room.connect_ready',
+          body: { debateId: liveDebateId, isHost: showCameraPreview },
+          attributes: { feature: 'room', 'debate.id': liveDebateId },
+        });
       })
-      .catch(() => {
+      .catch((error) => {
+        void trackLog({
+          eventName: 'room.connect_failed',
+          severity: 'ERROR',
+          body: error instanceof Error ? error.message : 'Failed to get LiveKit token.',
+          attributes: { feature: 'room', 'debate.id': liveDebateId },
+        });
         // Silently fall back to camera preview / glows
       });
 
     return () => {
       active = false;
     };
-  }, [liveDebateId, currentUser, showCameraPreview]);
+  }, [activeMediaParticipant, hasLiveAccess, liveDebateId, showCameraPreview]);
 
   // Load messages
   useEffect(() => {
-    if (!liveDebateId) {
+    if (!liveDebateId || !canUseRealtimeFeatures || !hasLiveAccess) {
+      setMessageError(null);
       return;
     }
 
@@ -346,18 +435,18 @@ export function DebateRoomScreen({
       active = false;
       unsubscribeFromChannel(channel);
     };
-  }, [liveDebateId]);
+  }, [canUseRealtimeFeatures, hasLiveAccess, liveDebateId]);
 
   // Presence tracking
   useEffect(() => {
-    if (!liveDebateId || !currentUser) {
+    if (!liveDebateId || !canUseRealtimeFeatures || !currentUser) {
       return;
     }
 
     const isHost = 'host_user_id' in debate && debate.host_user_id === currentUser.id;
     const channel = subscribeToDebatePresence(liveDebateId, {
       onSync: (state) => {
-        setParticipants((current) => getParticipantFromPresence(state, current));
+        setParticipants((current) => getParticipantFromPresence(state, current, requiresAdmission));
       },
       presenceKey: currentUser.id,
       track: {
@@ -366,14 +455,36 @@ export function DebateRoomScreen({
         user_avatar: currentUser.avatar,
         is_host: isHost,
         joined_at: new Date().toISOString(),
+        request_to_join: !isHost && requiresAdmission,
+        stage_state: isHost
+          ? {
+              [currentUser.id]: {
+                on_stage: true,
+                muted: false,
+                removed: false,
+              },
+            }
+          : undefined,
+        join_state: isHost
+          ? {
+              [currentUser.id]: {
+                requested: false,
+                admitted: true,
+              },
+            }
+          : undefined,
       },
     });
+    presenceChannelRef.current = channel;
 
     return () => {
+      if (presenceChannelRef.current === channel) {
+        presenceChannelRef.current = null;
+      }
       void channel.untrack();
       unsubscribeFromChannel(channel);
     };
-  }, [currentUser?.avatar, currentUser?.id, currentUser?.name, debate, liveDebateId]);
+  }, [canUseRealtimeFeatures, currentUser?.avatar, currentUser?.id, currentUser?.name, debate, liveDebateId, requiresAdmission]);
 
   // Build participants from mock data when not in realtime room
   useEffect(() => {
@@ -397,6 +508,8 @@ export function DebateRoomScreen({
         const existing = next.get(incoming.id);
         next.set(incoming.id, {
           ...incoming,
+          admitted: existing?.admitted ?? true,
+          requestingToJoin: existing?.requestingToJoin ?? false,
           onStage: existing?.onStage ?? false,
           muted: existing?.muted ?? false,
           removed: existing?.removed ?? false,
@@ -509,47 +622,142 @@ export function DebateRoomScreen({
     }
 
     if (actionKey === 'stage') {
+      void trackLog({
+        eventName: 'room.stage_sheet.opened',
+        body: { debateId: liveDebateId ?? null },
+        attributes: { feature: 'stage', 'debate.id': liveDebateId ?? 'unknown' },
+      });
       setIsStageSheetOpen(true);
       return;
     }
 
     if (actionKey === 'mic') {
+      void trackLog({
+        eventName: 'room.mic.toggle',
+        body: { enabled: !micEnabled, debateId: liveDebateId ?? null },
+        attributes: { feature: 'media', 'debate.id': liveDebateId ?? 'unknown' },
+      });
       setMicEnabled((v) => !v);
       return;
     }
 
     if (actionKey === 'camera') {
+      void trackLog({
+        eventName: 'room.camera.toggle',
+        body: { enabled: !cameraEnabled, debateId: liveDebateId ?? null },
+        attributes: { feature: 'media', 'debate.id': liveDebateId ?? 'unknown' },
+      });
       setCameraEnabled((v) => !v);
     }
   }
 
+  function updateRealtimeStageState(
+    current: StageParticipant[],
+    participantId: string,
+    updater: (participant: StageParticipant) => StageParticipant,
+  ) {
+    const next = current.map((participant) =>
+      participant.id === participantId ? updater(participant) : participant,
+    );
+
+    if (isRealtimeRoom && currentUser && presenceChannelRef.current) {
+      const stageState = next.reduce<DebateStageState>((result, participant) => {
+        result[participant.id] = {
+          on_stage: participant.onStage,
+          muted: participant.muted,
+          removed: participant.removed,
+        };
+        return result;
+      }, {});
+      const joinState = next.reduce<DebateJoinState>((result, participant) => {
+        result[participant.id] = {
+          requested: participant.requestingToJoin,
+          admitted: participant.admitted,
+        };
+        return result;
+      }, {});
+
+      void presenceChannelRef.current.track({
+        user_id: currentUser.id,
+        user_name: currentUser.name,
+        user_avatar: currentUser.avatar,
+        is_host: true,
+        joined_at: new Date().toISOString(),
+        stage_state: stageState,
+        join_state: joinState,
+      });
+    }
+
+    return next;
+  }
+
   function toggleParticipantStage(participantId: string) {
+    if (!isLiveCreator) return;
+    void trackLog({
+      eventName: 'stage.toggle_participant',
+      body: { debateId: liveDebateId ?? null, participantId },
+      attributes: { feature: 'stage', 'debate.id': liveDebateId ?? 'unknown' },
+    });
+
     setParticipants((current) =>
-      current.map((participant) =>
-        participant.id === participantId
-          ? { ...participant, onStage: !participant.onStage }
-          : participant,
-      ),
+      updateRealtimeStageState(current, participantId, (participant) => ({
+        ...participant,
+        admitted: true,
+        requestingToJoin: false,
+        onStage: !participant.onStage,
+      })),
     );
   }
 
   function toggleParticipantMute(participantId: string) {
+    if (!isLiveCreator) return;
+    void trackLog({
+      eventName: 'stage.toggle_mute',
+      body: { debateId: liveDebateId ?? null, participantId },
+      attributes: { feature: 'stage', 'debate.id': liveDebateId ?? 'unknown' },
+    });
+
     setParticipants((current) =>
-      current.map((participant) =>
-        participant.id === participantId
-          ? { ...participant, muted: !participant.muted }
-          : participant,
-      ),
+      updateRealtimeStageState(current, participantId, (participant) => ({
+        ...participant,
+        muted: !participant.muted,
+      })),
     );
   }
 
   function removeParticipantFromLive(participantId: string) {
+    if (!isLiveCreator) return;
+    void trackLog({
+      eventName: 'stage.remove_participant',
+      body: { debateId: liveDebateId ?? null, participantId },
+      attributes: { feature: 'stage', 'debate.id': liveDebateId ?? 'unknown' },
+    });
+
     setParticipants((current) =>
-      current.map((participant) =>
-        participant.id === participantId
-          ? { ...participant, removed: true, onStage: false }
-          : participant,
-      ),
+      updateRealtimeStageState(current, participantId, (participant) => ({
+        ...participant,
+        admitted: false,
+        requestingToJoin: false,
+        removed: true,
+        onStage: false,
+      })),
+    );
+  }
+
+  function admitParticipantToLive(participantId: string) {
+    if (!isLiveCreator) return;
+    void trackLog({
+      eventName: 'room.admit_participant',
+      body: { debateId: liveDebateId ?? null, participantId },
+      attributes: { feature: 'room_access', 'debate.id': liveDebateId ?? 'unknown' },
+    });
+
+    setParticipants((current) =>
+      updateRealtimeStageState(current, participantId, (participant) => ({
+        ...participant,
+        admitted: true,
+        requestingToJoin: false,
+      })),
     );
   }
 
@@ -558,7 +766,7 @@ export function DebateRoomScreen({
   }
 
   async function handleSendMessage() {
-    if (!liveDebateId || !currentUser) return;
+    if (!liveDebateId || !currentUser || !audienceCommentsEnabled || !hasLiveAccess) return;
 
     const trimmedBody = messageBody.trim();
     if (!trimmedBody) return;
@@ -576,8 +784,19 @@ export function DebateRoomScreen({
       });
       setMessages((current) => mergeMessages(current, mapRealtimeMessage(createdMessage)));
       setMessageBody('');
+      void trackLog({
+        eventName: 'chat.message_sent',
+        body: { debateId: liveDebateId, messageId: createdMessage.id },
+        attributes: { feature: 'chat', 'debate.id': liveDebateId },
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to send the message.';
+      void trackLog({
+        eventName: 'chat.message_send_failed',
+        severity: 'ERROR',
+        body: message,
+        attributes: { feature: 'chat', 'debate.id': liveDebateId },
+      });
       setMessageError(message);
     } finally {
       setSendingMessage(false);
@@ -650,7 +869,17 @@ export function DebateRoomScreen({
       <View style={styles.stageSpacer} />
 
       <View style={styles.overlayArea}>
-        <FactCheckStrip factCheck={factCheck} />
+        {factCheckEnabled ? <FactCheckStrip factCheck={factCheck} /> : null}
+
+        {requiresAdmission && !hasLiveAccess ? (
+          <View style={styles.waitingCard}>
+            <Text style={styles.waitingTitle}>Waiting for host approval</Text>
+            <Text style={styles.waitingCopy}>
+              This private debate is invite-only. The host needs to admit you before you can
+              join the live room.
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.messagesWindow}>
           <ScrollView
@@ -692,8 +921,14 @@ export function DebateRoomScreen({
       >
         <TextInput
           ref={inputRef}
-          editable={isRealtimeRoom && !sendingMessage}
-          placeholder="Add a comment..."
+          editable={isRealtimeRoom && hasLiveAccess && audienceCommentsEnabled && !sendingMessage}
+          placeholder={
+            !audienceCommentsEnabled
+              ? 'Audience comments are off'
+              : requiresAdmission && !hasLiveAccess
+                ? 'Waiting for host approval...'
+                : 'Add a comment...'
+          }
           placeholderTextColor={colors.textFaint}
           style={styles.commentInput}
           value={messageBody}
@@ -706,7 +941,7 @@ export function DebateRoomScreen({
             onPress={() => {
               void handleSendMessage();
             }}
-            disabled={!isRealtimeRoom || sendingMessage}
+            disabled={!isRealtimeRoom || !hasLiveAccess || !audienceCommentsEnabled || sendingMessage}
           >
             <Text style={styles.sendButtonText}>{sendingMessage ? '...' : 'Send'}</Text>
           </Pressable>
@@ -785,6 +1020,48 @@ export function DebateRoomScreen({
               </Text>
             </View>
 
+            {isLiveCreator && pendingParticipants.length > 0 ? (
+              <View style={styles.pendingSection}>
+                <Text style={styles.pendingTitle}>Requests to join</Text>
+                {pendingParticipants.map((participant) => (
+                  <View key={`pending-${participant.id}`} style={styles.pendingCard}>
+                    <View style={styles.participantHeader}>
+                      <View style={styles.participantAvatar}>
+                        <Text style={styles.participantAvatarText}>{participant.avatar}</Text>
+                      </View>
+                      <View style={styles.participantMeta}>
+                        <Text style={styles.participantName}>{participant.name}</Text>
+                        <Text style={styles.hostNote}>Waiting for approval to join this private live.</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.participantActions}>
+                      <Pressable
+                        onPress={() => admitParticipantToLive(participant.id)}
+                        style={({ pressed }) => [
+                          styles.participantAction,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.participantActionText}>Admit</Text>
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => removeParticipantFromLive(participant.id)}
+                        style={({ pressed }) => [
+                          styles.participantAction,
+                          styles.participantActionDanger,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.participantActionDangerText}>Deny</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             <ScrollView
               contentContainerStyle={styles.participantList}
               showsVerticalScrollIndicator={false}
@@ -819,6 +1096,8 @@ export function DebateRoomScreen({
 
                   {participant.role === 'host' ? (
                     <Text style={styles.hostNote}>You are the host for this live.</Text>
+                  ) : !isLiveCreator ? (
+                    <Text style={styles.hostNote}>Only the live creator can manage the stage.</Text>
                   ) : (
                     <View style={styles.participantActions}>
                       <Pressable
@@ -1091,6 +1370,28 @@ const styles = StyleSheet.create({
     paddingBottom: 116,
     gap: spacing.md,
   },
+  waitingCard: {
+    maxWidth: 320,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radii.lg,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(11, 11, 16, 0.68)',
+    borderWidth: 1,
+    borderColor: colors.borderOverlay,
+    gap: spacing.xs,
+  },
+  waitingTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  waitingCopy: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
+  },
   messagesWindow: {
     maxHeight: 250,
   },
@@ -1201,6 +1502,23 @@ const styles = StyleSheet.create({
   },
   sheetHeader: {
     gap: spacing.xs,
+  },
+  pendingSection: {
+    gap: spacing.sm,
+  },
+  pendingTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pendingCard: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
   },
   sheetTitle: {
     color: colors.textPrimary,

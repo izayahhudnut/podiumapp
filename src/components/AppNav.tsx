@@ -6,10 +6,11 @@ type Screen = 'home' | 'create' | 'room';
 
 type AppNavProps = {
   active: 'home' | 'create' | 'profile';
+  guestMode?: boolean;
   onChange: (screen: 'home' | 'create' | 'profile') => void;
 };
 
-export function AppNav({ active, onChange }: AppNavProps) {
+export function AppNav({ active, guestMode = false, onChange }: AppNavProps) {
   return (
     <View style={styles.nav}>
       <Pressable style={styles.sideButton} onPress={() => onChange('home')}>
@@ -17,11 +18,13 @@ export function AppNav({ active, onChange }: AppNavProps) {
       </Pressable>
 
       <Pressable style={styles.createButton} onPress={() => onChange('create')}>
-        <Text style={styles.createLabel}>+</Text>
+        <Text style={styles.createLabel}>{guestMode ? '...' : '+'}</Text>
       </Pressable>
 
       <Pressable style={styles.sideButton} onPress={() => onChange('profile')}>
-        <Text style={[styles.sideLabel, active === 'profile' && styles.activeLabel]}>Profile</Text>
+        <Text style={[styles.sideLabel, active === 'profile' && styles.activeLabel]}>
+          {guestMode ? 'Sign In' : 'Profile'}
+        </Text>
       </Pressable>
     </View>
   );

@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { trackLog } from '../lib/opscompanion';
 import { colors, radii, spacing } from '../theme';
 
 type AppErrorBoundaryProps = {
@@ -25,6 +26,15 @@ export class AppErrorBoundary extends Component<
 
   componentDidCatch(error: Error) {
     console.error('App crashed', error);
+    void trackLog({
+      eventName: 'app.crash',
+      severity: 'FATAL',
+      body: {
+        message: error.message,
+        stack: error.stack ?? null,
+      },
+      attributes: { feature: 'app_error_boundary' },
+    });
   }
 
   handleRetry = () => {

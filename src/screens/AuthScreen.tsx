@@ -18,6 +18,7 @@ type AuthScreenProps = {
   onSubmit: () => void;
   onSwitchVariant: (variant: 'sign-in' | 'sign-up') => void;
   onPickAvatar: () => void;
+  onContinueAsGuest: () => void;
 };
 
 export function AuthScreen({
@@ -34,6 +35,7 @@ export function AuthScreen({
   onSubmit,
   onSwitchVariant,
   onPickAvatar,
+  onContinueAsGuest,
 }: AuthScreenProps) {
   const isSignIn = variant === 'sign-in';
   const isSignUp = variant === 'sign-up';
@@ -136,6 +138,14 @@ export function AuthScreen({
 
         {!isCompleteProfile ? (
           <>
+            <Pressable
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+              onPress={onContinueAsGuest}
+              disabled={submitting}
+            >
+              <Text style={styles.secondaryButtonText}>Continue as Guest</Text>
+            </Pressable>
+
             <Text style={styles.switchText}>
               {isSignIn ? "Don't have an account?" : 'Already have an account?'}{' '}
               <Text
@@ -220,6 +230,21 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: colors.background,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    borderRadius: radii.pill,
+    borderCurve: 'continuous',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  secondaryButtonText: {
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '500',
   },

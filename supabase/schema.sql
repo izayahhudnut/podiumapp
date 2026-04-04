@@ -7,6 +7,9 @@ create table if not exists public.debates (
   topic text not null,
   description text,
   is_public boolean not null default true,
+  fact_check_enabled boolean not null default true,
+  audience_comments_enabled boolean not null default true,
+  ask_to_join_enabled boolean not null default true,
   status text not null default 'live' check (status in ('live', 'scheduled', 'ended')),
   scheduled_for timestamptz,
   thumbnail_url text,
@@ -15,6 +18,9 @@ create table if not exists public.debates (
 
 -- Add thumbnail_url to existing tables that were created before this column
 alter table public.debates add column if not exists thumbnail_url text;
+alter table public.debates add column if not exists fact_check_enabled boolean not null default true;
+alter table public.debates add column if not exists audience_comments_enabled boolean not null default true;
+alter table public.debates add column if not exists ask_to_join_enabled boolean not null default true;
 
 create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
@@ -98,6 +104,13 @@ to authenticated
 with check (auth.uid() = host_user_id);
 
 drop policy if exists "authenticated users can read debates" on public.debates;
+drop policy if exists "anyone can read public debates" on public.debates;
+create policy "anyone can read public debates"
+on public.debates
+for select
+to public
+using (is_public = true);
+
 create policy "authenticated users can read debates"
 on public.debates
 for select
@@ -333,5 +346,5 @@ with check (bucket_id = 'debate-thumbnails' and auth.uid()::text = (storage.fold
 
 drop policy if exists "anyone can view thumbnails" on storage.objects;
 create policy "anyone can view thumbnails"
-on storage.objects for select to authenticated
+on storage.objects for select to public
 using (bucket_id = 'debate-thumbnails');

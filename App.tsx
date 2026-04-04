@@ -61,10 +61,16 @@ import {
 import type { DebateCardItem } from './src/data/mockDebates';
 import { uploadDebateThumbnail } from './src/lib/storage';
 import { getEnvErrorMessage } from './src/lib/env';
+import { trackLog, trackTrace } from './src/lib/opscompanion';
 import { colors } from './src/theme';
 
 type Screen = 'home' | 'create' | 'profile' | 'room';
 type AuthVariant = 'sign-in' | 'sign-up' | 'complete-profile';
+type GuestUser = {
+  id: string;
+  name: string;
+  avatar: string;
+};
 
 function getInitials(value: string) {
   return (
@@ -198,11 +204,23 @@ function mapScheduledDebateToCard(
   };
 }
 
+function createGuestUser(): GuestUser {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const name = `Guest ${suffix.toUpperCase()}`;
+
+  return {
+    id: `guest-${suffix}`,
+    name,
+    avatar: getInitials(name),
+  };
+}
+
 export default function App() {
   const configError = getEnvErrorMessage();
   const presenceChannelsRef = useRef<Record<string, RealtimeChannel>>({});
   const [screen, setScreen] = useState<Screen>('home');
   const [session, setSession] = useState<Session | null>(null);
+  const [guestUser, setGuestUser] = useState<GuestUser | null>(null);
   const [authVariant, setAuthVariant] = useState<AuthVariant>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -232,14 +250,18 @@ export default function App() {
   const [createDebateError, setCreateDebateError] = useState<string | null>(null);
   const [createDebateSubmitting, setCreateDebateSubmitting] = useState(false);
 
+  const isGuestMode = guestUser != null;
   const currentUserName =
     (session?.user.user_metadata?.full_name as string | undefined) ??
     session?.user.email?.split('@')[0] ??
+    guestUser?.name ??
     'Podium User';
-  const currentUserAvatar = getInitials(currentUserName);
+  const currentUserAvatar =
+    guestUser?.avatar ??
+    getInitials(currentUserName);
   const currentUser = session
     ? { id: session.user.id, name: currentUserName, avatar: currentUserAvatar }
-    : undefined;
+    : guestUser ?? undefined;
 
   const liveCards = publicLiveDebates.map((debate) =>
     mapLiveDebateToCard(debate, presenceSnapshots[debate.id], currentUserAvatar),
@@ -280,7 +302,12 @@ export default function App() {
       try {
         await checkBackendConnection();
         const initialSession = await getCurrentSession();
-        if (active) setSession(initialSession);
+        if (active) {
+          setSession(initialSession);
+          if (initialSession) {
+            setGuestUser(null);
+          }
+        }
       } catch (error) {
         if (active) {
           setAuthError(
@@ -295,7 +322,12 @@ export default function App() {
     const {
       data: { subscription },
     } = subscribeToAuthChanges((_event, nextSession) => {
-      if (active) setSession(nextSession);
+      if (active) {
+        setSession(nextSession);
+        if (nextSession) {
+          setGuestUser(null);
+        }
+      }
     });
 
     return () => {
@@ -312,9 +344,9 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicLiveDebates]);
 
-  // Load debates when session is ready
+  // Load public debates and session-bound profile data
   useEffect(() => {
-    if (configError || !session) {
+    if (configError) {
       setPublicLiveDebates([]);
       setPublicScheduledDebates([]);
       setPresenceSnapshots({});
@@ -336,11 +368,8 @@ export default function App() {
     setDebatesLoading(true);
     setDebatesError(null);
 
-    const userId = session.user.id;
-
     async function loadAll() {
       try {
-        // Debates are critical — fail loudly if these don't work
         const [liveDebates, scheduledDebates] = await Promise.all([
           getPublicLiveDebates(),
           getPublicScheduledDebates(),
@@ -349,28 +378,51 @@ export default function App() {
           setPublicLiveDebates(liveDebates);
           setPublicScheduledDebates(scheduledDebates);
         }
+        void trackLog({
+          eventName: 'feed.load.succeeded',
+          body: {
+            liveCount: liveDebates.length,
+            scheduledCount: scheduledDebates.length,
+          },
+          attributes: { feature: 'feed', 'user.is_guest': isGuestMode },
+        });
       } catch (error) {
         if (active) {
           setDebatesError(
             error instanceof Error ? error.message : 'Unable to load debates.',
           );
         }
+        void trackLog({
+          eventName: 'feed.load.failed',
+          severity: 'ERROR',
+          body: error instanceof Error ? error.message : 'Unable to load debates.',
+          attributes: { feature: 'feed', 'user.is_guest': isGuestMode },
+        });
       } finally {
         if (active) setDebatesLoading(false);
       }
 
-      // Profile data is secondary — don't let failures block the debates feed
+      if (!session) {
+        if (active) {
+          setUserProfile(null);
+          setUserDebates([]);
+          setLikedDebates([]);
+          setLikedDebateIds(new Set());
+        }
+        return;
+      }
+
       try {
         const [profile, myDebates, myLiked, myLikedIds, mySaved, mySavedIds, myFollowingIds, myFollowerCount, myFollowingCount] = await Promise.all([
-          getOrCreateProfile(userId),
-          getUserDebates(userId),
-          getLikedDebates(userId),
-          getLikedDebateIds(userId),
-          getSavedDebates(userId),
-          getSavedDebateIds(userId),
-          getFollowingIds(userId),
-          getFollowerCount(userId),
-          getFollowingCount(userId),
+          getOrCreateProfile(session.user.id),
+          getUserDebates(session.user.id),
+          getLikedDebates(session.user.id),
+          getLikedDebateIds(session.user.id),
+          getSavedDebates(session.user.id),
+          getSavedDebateIds(session.user.id),
+          getFollowingIds(session.user.id),
+          getFollowerCount(session.user.id),
+          getFollowingCount(session.user.id),
         ]);
         if (active) {
           setUserProfile(profile);
@@ -384,7 +436,6 @@ export default function App() {
           setFollowingCount(myFollowingCount);
         }
       } catch {
-        // Profile tables may not exist yet — silently ignore
       }
     }
 
@@ -404,7 +455,7 @@ export default function App() {
 
   // Presence subscriptions for live debates
   useEffect(() => {
-    if (configError || !session) {
+    if (configError) {
       Object.values(presenceChannelsRef.current).forEach((channel) => {
         unsubscribeFromChannel(channel);
       });
@@ -470,6 +521,7 @@ export default function App() {
     setAuthSubmitting(true);
     setAuthError(null);
     try {
+      setGuestUser(null);
       const nextSession = await signInWithPassword(normalizedEmail, password);
       setSession(nextSession ?? null);
     } catch (error) {
@@ -497,6 +549,7 @@ export default function App() {
     setAuthSubmitting(true);
     setAuthError(null);
     try {
+      setGuestUser(null);
       const result = await signUpWithPassword(
         email.trim().toLowerCase(),
         password,
@@ -540,6 +593,7 @@ export default function App() {
     try {
       await signOut();
       setSession(null);
+      setGuestUser(null);
       setPublicLiveDebates([]);
       setPublicScheduledDebates([]);
       setPresenceSnapshots({});
@@ -561,6 +615,29 @@ export default function App() {
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Unable to sign out right now.');
     }
+  }
+
+  function handleContinueAsGuest() {
+    const guest = createGuestUser();
+    void trackLog({
+      eventName: 'auth.continue_as_guest',
+      body: { guestId: guest.id },
+      attributes: { feature: 'auth' },
+    });
+    setGuestUser(guest);
+    setAuthError(null);
+    setAuthVariant('sign-in');
+    setPassword('');
+    setName('');
+    setAvatarUri(null);
+    setScreen('home');
+  }
+
+  function handleRequireAuth() {
+    setGuestUser(null);
+    setAuthVariant('sign-in');
+    setAuthError(null);
+    setScreen('home');
   }
 
   async function handleEditProfile(values: EditProfileValues) {
@@ -727,6 +804,7 @@ export default function App() {
     setCreateDebateError(null);
 
     try {
+      const startTimeMs = Date.now();
       let thumbnailUrl: string | null = null;
       if (values.thumbnailUri) {
         thumbnailUrl = await uploadDebateThumbnail(session.user.id, values.thumbnailUri);
@@ -738,6 +816,9 @@ export default function App() {
         topic: values.topic,
         description: values.description,
         isPublic: values.isPublic,
+        factCheckEnabled: values.factCheckEnabled,
+        audienceCommentsEnabled: values.audienceCommentsEnabled,
+        askToJoinEnabled: values.askToJoinEnabled,
         scheduledFor: values.scheduledFor,
         thumbnailUrl,
       });
@@ -766,8 +847,25 @@ export default function App() {
         setActiveLiveDebate(createdDebate);
         setScreen('room');
       }
+      void trackTrace({
+        name: 'ui.create_debate',
+        startTimeMs,
+        endTimeMs: Date.now(),
+        attributes: {
+          feature: 'debates',
+          'debate.id': createdDebate.id,
+          'debate.is_public': createdDebate.is_public,
+          'debate.status': createdDebate.status,
+        },
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to create the debate.';
+      void trackLog({
+        eventName: 'ui.create_debate.failed',
+        severity: 'ERROR',
+        body: message,
+        attributes: { feature: 'debates' },
+      });
       setCreateDebateError(
         `${message} Run supabase/schema.sql in the Supabase SQL editor first.`,
       );
@@ -789,7 +887,18 @@ export default function App() {
       );
       setActiveLiveDebate(startedDebate);
       setScreen('room');
+      void trackLog({
+        eventName: 'ui.start_scheduled_debate.succeeded',
+        body: { debateId },
+        attributes: { feature: 'debates', 'debate.id': debateId },
+      });
     } catch (error) {
+      void trackLog({
+        eventName: 'ui.start_scheduled_debate.failed',
+        severity: 'ERROR',
+        body: error instanceof Error ? error.message : 'Unable to start the debate.',
+        attributes: { feature: 'debates', 'debate.id': debateId },
+      });
       setDebatesError(
         error instanceof Error ? error.message : 'Unable to start the debate.',
       );
@@ -816,6 +925,12 @@ export default function App() {
       }
     }
 
+    void trackLog({
+      eventName: 'ui.close_live_debate',
+      body: { debateId: activeLiveDebate.id },
+      attributes: { feature: 'debates', 'debate.id': activeLiveDebate.id },
+    });
+
     setActiveLiveDebate(null);
     setScreen('home');
   }
@@ -824,6 +939,11 @@ export default function App() {
     // Live debate — enter the room
     const nextLiveDebate = publicLiveDebates.find((debate) => debate.id === debateId);
     if (nextLiveDebate) {
+      void trackLog({
+        eventName: 'ui.open_live_debate',
+        body: { debateId },
+        attributes: { feature: 'debates', 'debate.id': debateId },
+      });
       setActiveLiveDebate(nextLiveDebate);
       setScreen('room');
       return;
@@ -846,7 +966,7 @@ export default function App() {
       <View style={styles.appShell}>
         <StatusBar style="light" />
 
-        {!session ? (
+        {!session && !isGuestMode ? (
           <AuthScreen
             variant={authVariant}
             email={email}
@@ -870,17 +990,18 @@ export default function App() {
               if (!configError) setAuthError(null);
             }}
             onPickAvatar={handlePickAvatar}
+            onContinueAsGuest={handleContinueAsGuest}
           />
         ) : null}
 
-        {session && screen === 'home' ? (
+        {(session || isGuestMode) && screen === 'home' ? (
           <HomeScreen
             debates={homeDebates}
             errorMessage={debatesError}
             loading={debatesLoading}
-            currentUserId={session.user.id}
+            currentUserId={session?.user.id}
             onOpenDebate={handleOpenDebate}
-            onStartScheduled={handleStartScheduled}
+            onStartScheduled={session ? handleStartScheduled : undefined}
           />
         ) : null}
 
@@ -921,14 +1042,18 @@ export default function App() {
           />
         ) : null}
 
-        {session && screen === 'room' && activeLiveDebate ? (
+        {(session || isGuestMode) && screen === 'room' && activeLiveDebate ? (
           <DebateRoomScreen
             debate={activeLiveDebate}
             liveDebateId={activeLiveDebate.id}
-            currentUser={currentUser}
-            showCameraPreview={activeLiveDebate.host_user_id === session.user.id}
-            isLiked={likedDebateIds.has(activeLiveDebate.id)}
-            onToggleLike={() => void handleToggleLike(activeLiveDebate.id)}
+            currentUser={session ? currentUser : undefined}
+            mediaParticipant={currentUser}
+            canUseRealtimeFeatures={Boolean(session)}
+            showCameraPreview={Boolean(session)}
+            isLiked={session ? likedDebateIds.has(activeLiveDebate.id) : false}
+            onToggleLike={
+              session ? () => void handleToggleLike(activeLiveDebate.id) : undefined
+            }
             isFollowingHost={followingIds.has(activeLiveDebate.host_user_id)}
             onToggleFollow={() => void handleToggleFollow(activeLiveDebate.host_user_id)}
             onClose={() => {
@@ -937,7 +1062,19 @@ export default function App() {
           />
         ) : null}
 
-        {session && screen !== 'room' ? <AppNav active={screen} onChange={setScreen} /> : null}
+        {(session || isGuestMode) && screen !== 'room' ? (
+          <AppNav
+            active={screen === 'create' || screen === 'profile' ? screen : 'home'}
+            guestMode={isGuestMode}
+            onChange={(nextScreen) => {
+              if (!session && isGuestMode && nextScreen !== 'home') {
+                handleRequireAuth();
+                return;
+              }
+              setScreen(nextScreen);
+            }}
+          />
+        ) : null}
       </View>
     </AppErrorBoundary>
   );

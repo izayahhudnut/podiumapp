@@ -1,10 +1,11 @@
 import { StyleSheet } from 'react-native';
 import {
+  AudioSession,
   LiveKitRoom,
   VideoTrack,
+  isTrackReference,
   useTracks,
   useLocalParticipant,
-  type TrackReference,
 } from '@livekit/react-native';
 import { Track } from 'livekit-client';
 import { useEffect } from 'react';
@@ -19,11 +20,10 @@ type LiveVideoLayerProps = {
 
 function LiveVideoBackground({ isHost }: { isHost: boolean }) {
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: false }]);
-  const videoTrack = (
-    isHost
-      ? tracks.find((t) => t.participant?.isLocal)
-      : tracks.find((t) => !t.participant?.isLocal)
-  ) as TrackReference | undefined;
+  const cameraTracks = tracks.filter(isTrackReference);
+  const remoteCameraTrack = cameraTracks.find((track) => !track.participant.isLocal);
+  const localCameraTrack = cameraTracks.find((track) => track.participant.isLocal);
+  const videoTrack = isHost ? remoteCameraTrack ?? localCameraTrack : remoteCameraTrack;
 
   if (!videoTrack) return null;
 
@@ -56,6 +56,18 @@ function LocalMediaSync({
   return null;
 }
 
+function LiveKitAudioSession() {
+  useEffect(() => {
+    AudioSession.startAudioSession().catch(() => {});
+
+    return () => {
+      AudioSession.stopAudioSession().catch(() => {});
+    };
+  }, []);
+
+  return null;
+}
+
 export function LiveVideoLayer({
   serverUrl,
   token,
@@ -69,12 +81,11 @@ export function LiveVideoLayer({
       token={token}
       connect
       audio
-      video={isHost}
+      video={isHost && cameraEnabled}
     >
+      <LiveKitAudioSession />
       <LiveVideoBackground isHost={isHost} />
-      {isHost ? (
-        <LocalMediaSync micEnabled={micEnabled} cameraEnabled={cameraEnabled} />
-      ) : null}
+      <LocalMediaSync micEnabled={micEnabled} cameraEnabled={cameraEnabled} />
     </LiveKitRoom>
   );
 }

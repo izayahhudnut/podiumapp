@@ -8,6 +8,7 @@
       "distribution": "internal",
       "autoIncrement": true,
       "env": {
+        "EXPO_PUBLIC_OPSCOMPANION_API_KEY": "opc_sk_fuzouvt3.A1qVW5KWOF2vKcpO8Hn0VP7N9hLFYIpM8U7g1uqGQnk",
         "EXPO_PUBLIC_SUPABASE_URL": "https://pwfuzrifwlludyiyuumc.supabase.co",
         "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_8CvfOJQOE7aZysfrDUbBnA_hassKI2l",
         "EXPO_PUBLIC_LIVEKIT_URL": "wss://parium-cb34kkgj.livekit.cloud"
@@ -16,6 +17,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
+        "EXPO_PUBLIC_OPSCOMPANION_API_KEY": "opc_sk_fuzouvt3.A1qVW5KWOF2vKcpO8Hn0VP7N9hLFYIpM8U7g1uqGQnk",
         "EXPO_PUBLIC_SUPABASE_URL": "https://pwfuzrifwlludyiyuumc.supabase.co",
         "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_8CvfOJQOE7aZysfrDUbBnA_hassKI2l",
         "EXPO_PUBLIC_LIVEKIT_URL": "wss://parium-cb34kkgj.livekit.cloud"
