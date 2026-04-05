@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import * as Linking from 'expo-linking';
 import {
+  Alert,
   Keyboard,
   Modal,
   Platform,
@@ -73,6 +74,7 @@ type DebateRoomScreenProps = {
   onToggleLike?: () => void;
   isFollowingHost?: boolean;
   onToggleFollow?: () => void;
+  onViewHostProfile?: () => void;
   onClose: () => void;
 };
 
@@ -258,6 +260,7 @@ export function DebateRoomScreen({
   onToggleLike,
   isFollowingHost = false,
   onToggleFollow,
+  onViewHostProfile,
   onClose,
 }: DebateRoomScreenProps) {
   const inputRef = useRef<TextInput>(null);
@@ -858,7 +861,20 @@ export function DebateRoomScreen({
             <Text style={styles.viewerText}>{viewerLabel}</Text>
           </View>
           <Pressable
-            onPress={onClose}
+            onPress={() => {
+              if (isLiveCreator && isRealtimeRoom) {
+                Alert.alert(
+                  'End Broadcast',
+                  'Are you sure you want to end this broadcast? This will close the stream for all viewers.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'End Broadcast', style: 'destructive', onPress: onClose },
+                  ],
+                );
+              } else {
+                onClose();
+              }
+            }}
             style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
           >
             <Text style={styles.closeText}>X</Text>
@@ -989,12 +1005,24 @@ export function DebateRoomScreen({
             ) : (
               <Text style={styles.infoDescriptionEmpty}>No description provided.</Text>
             )}
-            <View style={styles.infoHostRow}>
+            <Pressable
+              style={({ pressed }) => [styles.infoHostRow, pressed && styles.pressed]}
+              onPress={() => {
+                if (!isLiveCreator && onViewHostProfile) {
+                  setIsInfoSheetOpen(false);
+                  onViewHostProfile();
+                }
+              }}
+              disabled={isLiveCreator || !onViewHostProfile}
+            >
               <View style={styles.infoHostAvatar}>
                 <Text style={styles.infoHostAvatarText}>{hostParticipant.avatar}</Text>
               </View>
               <Text style={styles.infoHostName}>{hostParticipant.name}</Text>
-            </View>
+              {!isLiveCreator && onViewHostProfile ? (
+                <Ionicons name="chevron-forward" size={16} color={colors.textDim} style={{ marginLeft: 'auto' }} />
+              ) : null}
+            </Pressable>
           </View>
         </View>
       </Modal>

@@ -13,6 +13,7 @@ import {
   type CreateDebateValues,
 } from './src/screens/CreateDebateScreen';
 import { DebateRoomScreen } from './src/screens/DebateRoomScreen';
+import { UserProfileModal } from './src/screens/UserProfileModal';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { checkBackendConnection } from './src/lib/backend';
@@ -279,6 +280,7 @@ export default function App() {
   const [debatesError, setDebatesError] = useState<string | null>(null);
   const [createDebateError, setCreateDebateError] = useState<string | null>(null);
   const [createDebateSubmitting, setCreateDebateSubmitting] = useState(false);
+  const [viewingProfile, setViewingProfile] = useState<{ userId: string; userName: string } | null>(null);
 
   const isGuestMode = guestUser != null;
   const currentUserName =
@@ -805,6 +807,10 @@ export default function App() {
     }
   }
 
+  function handleViewProfile(userId: string, userName: string) {
+    setViewingProfile({ userId, userName });
+  }
+
   async function handleDeleteDebate(debateId: string) {
     if (!session) return;
     try {
@@ -1046,6 +1052,7 @@ export default function App() {
             currentUserId={session?.user.id}
             onOpenDebate={handleOpenDebate}
             onStartScheduled={session ? handleStartScheduled : undefined}
+            onViewProfile={handleViewProfile}
           />
         ) : null}
 
@@ -1100,6 +1107,13 @@ export default function App() {
             }
             isFollowingHost={followingIds.has(activeLiveDebate.host_user_id)}
             onToggleFollow={() => void handleToggleFollow(activeLiveDebate.host_user_id)}
+            onViewHostProfile={() => {
+              const hostCard = publicLiveDebates.find((d) => d.id === activeLiveDebate.id);
+              const hostName = hostCard
+                ? mapLiveDebateToCard(hostCard, presenceSnapshots[hostCard.id], currentUserAvatar).host
+                : 'Host';
+              handleViewProfile(activeLiveDebate.host_user_id, hostName);
+            }}
             onClose={() => {
               void handleCloseLiveDebate();
             }}
@@ -1116,6 +1130,21 @@ export default function App() {
                 return;
               }
               setScreen(nextScreen);
+            }}
+          />
+        ) : null}
+
+        {(session || isGuestMode) && viewingProfile ? (
+          <UserProfileModal
+            visible={Boolean(viewingProfile)}
+            userId={viewingProfile.userId}
+            userName={viewingProfile.userName}
+            isFollowing={followingIds.has(viewingProfile.userId)}
+            onToggleFollow={() => void handleToggleFollow(viewingProfile.userId)}
+            onClose={() => setViewingProfile(null)}
+            onOpenDebate={(id) => {
+              setViewingProfile(null);
+              handleOpenDebate(id);
             }}
           />
         ) : null}

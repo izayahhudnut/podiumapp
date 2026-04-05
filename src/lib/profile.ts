@@ -54,6 +54,16 @@ export async function upsertProfile(
   return data;
 }
 
+export async function getPublicProfile(userId: string): Promise<ProfileRecord | null> {
+  const supabase = getSupabaseClient();
+  const { data } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single<ProfileRecord>();
+  return data ?? null;
+}
+
 export async function getUserDebates(userId: string): Promise<DebateRecord[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase

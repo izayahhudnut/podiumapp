@@ -22,6 +22,7 @@ type HomeScreenProps = {
   currentUserId?: string;
   onOpenDebate: (debateId: string) => void;
   onStartScheduled?: (debateId: string) => void;
+  onViewProfile?: (userId: string, userName: string) => void;
 };
 
 type Tab = 'live' | 'upcoming';
@@ -33,6 +34,7 @@ export function HomeScreen({
   currentUserId,
   onOpenDebate,
   onStartScheduled,
+  onViewProfile,
 }: HomeScreenProps) {
   const [tab, setTab] = useState<Tab>('live');
   const [searchQuery, setSearchQuery] = useState('');
@@ -137,7 +139,15 @@ export function HomeScreen({
 
           return (
             <View key={debate.id}>
-              <DebateCard debate={debate} onPress={() => onOpenDebate(debate.id)} />
+              <DebateCard
+                debate={debate}
+                onPress={() => onOpenDebate(debate.id)}
+                onPressHost={
+                  debate.hostId && debate.hostId !== currentUserId && onViewProfile
+                    ? () => onViewProfile(debate.hostId!, debate.host)
+                    : undefined
+                }
+              />
               {isMyScheduled ? (
                 <Pressable
                   style={({ pressed }) => [styles.startNowButton, pressed && styles.pressed]}

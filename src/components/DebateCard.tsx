@@ -6,10 +6,11 @@ import { colors, radii, spacing } from '../theme';
 type DebateCardProps = {
   debate: DebateCardItem;
   onPress: () => void;
+  onPressHost?: () => void;
   compact?: boolean;
 };
 
-export function DebateCard({ debate, onPress, compact = false }: DebateCardProps) {
+export function DebateCard({ debate, onPress, onPressHost, compact = false }: DebateCardProps) {
   const cardHeight = compact ? 232 : 360;
   const content = (
     <>
@@ -30,7 +31,11 @@ export function DebateCard({ debate, onPress, compact = false }: DebateCardProps
       </View>
 
       <View style={styles.bottom}>
-        <View style={styles.hostRow}>
+        <Pressable
+          style={({ pressed }) => [styles.hostRow, onPressHost && pressed && styles.pressed]}
+          onPress={onPressHost}
+          disabled={!onPressHost}
+        >
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{debate.hostAvatar}</Text>
           </View>
@@ -40,7 +45,7 @@ export function DebateCard({ debate, onPress, compact = false }: DebateCardProps
               {debate.isLive ? debate.startedAt : debate.scheduledFor}
             </Text>
           </View>
-        </View>
+        </Pressable>
 
         <Text style={[styles.title, compact && styles.titleCompact]} numberOfLines={compact ? 3 : 2}>
           {debate.title}

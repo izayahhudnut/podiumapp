@@ -404,6 +404,19 @@ export function subscribeToDebateMessages(
   return channel;
 }
 
+export async function getPublicDebatesByUser(userId: string): Promise<DebateRecord[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('debates')
+    .select('*')
+    .eq('host_user_id', userId)
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+    .returns<DebateRecord[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function getLikeCount(debateId: string): Promise<number> {
   const supabase = getSupabaseClient();
   const { count } = await supabase
