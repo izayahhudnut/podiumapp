@@ -824,10 +824,7 @@ export function DebateRoomScreen({
 
       {/* Video layer — uses LiveKit in a dev/prod build, falls back in Expo Go */}
       {isLiveKitConnected && LiveVideoLayer ? (
-        <View
-          style={[StyleSheet.absoluteFillObject, !cameraEnabled && showCameraPreview && { opacity: 0 }]}
-          pointerEvents="none"
-        >
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
           <LiveVideoLayer
             serverUrl={livekitUrl!}
             token={livekitToken!}
