@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import * as Linking from 'expo-linking';
 import {
   Alert,
+  Image,
   Keyboard,
   Modal,
   Platform,
@@ -314,6 +315,8 @@ export function DebateRoomScreen({
   const hasLiveAccess = !requiresAdmission || isLiveCreator || currentParticipant?.admitted === true;
   const title = 'title' in debate ? debate.title : '';
   const topic = debate.topic ?? '';
+  const thumbnailUri =
+    'thumbnail_url' in debate ? (debate.thumbnail_url ?? null) : (debate.image ?? null);
   const description = 'description' in debate ? (debate.description ?? '') : '';
   const viewerLabel = room?.viewers ?? `${visibleParticipants.length}`;
   const factCheck = room?.factCheck ?? liveRoom.factCheck;
@@ -329,11 +332,11 @@ export function DebateRoomScreen({
         { key: 'share', icon: 'share-social', label: room.hearts[2] },
       ]
     : [
-        {
+        ...(!isLiveCreator ? [{
           key: 'like',
           icon: isLiked ? 'heart' : 'heart-outline',
           label: isLiked ? 'Liked' : 'Like',
-        } as ActionItem,
+        } as ActionItem] : []),
         ...(isRealtimeRoom && hostUserId && currentUser?.id !== hostUserId
           ? [{
               key: 'follow',
@@ -808,9 +811,23 @@ export function DebateRoomScreen({
 
   return (
     <View style={styles.screen}>
+      {/* Base background — thumbnail when camera is off, black otherwise */}
+      {thumbnailUri ? (
+        <Image
+          source={{ uri: thumbnailUri }}
+          style={styles.thumbnailBackground}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.blackBackground} />
+      )}
+
       {/* Video layer — uses LiveKit in a dev/prod build, falls back in Expo Go */}
       {isLiveKitConnected && LiveVideoLayer ? (
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+        <View
+          style={[StyleSheet.absoluteFillObject, !cameraEnabled && showCameraPreview && { opacity: 0 }]}
+          pointerEvents="none"
+        >
           <LiveVideoLayer
             serverUrl={livekitUrl!}
             token={livekitToken!}
@@ -824,8 +841,6 @@ export function DebateRoomScreen({
           {showCameraPreview && cameraEnabled && permission?.granted ? (
             <CameraView facing="front" style={styles.cameraBackground} />
           ) : null}
-          {!showCameraPreview ? <View style={styles.backgroundGlowTop} /> : null}
-          {!showCameraPreview ? <View style={styles.backgroundGlowBottom} /> : null}
         </>
       )}
 
@@ -1184,23 +1199,12 @@ const styles = StyleSheet.create({
   cameraBackground: {
     ...StyleSheet.absoluteFillObject,
   },
-  backgroundGlowTop: {
-    position: 'absolute',
-    top: -80,
-    right: -40,
-    width: 240,
-    height: 240,
-    borderRadius: radii.pill,
-    backgroundColor: 'rgba(214, 63, 124, 0.35)',
+  thumbnailBackground: {
+    ...StyleSheet.absoluteFillObject,
   },
-  backgroundGlowBottom: {
-    position: 'absolute',
-    bottom: 140,
-    left: -40,
-    width: 220,
-    height: 220,
-    borderRadius: radii.pill,
-    backgroundColor: 'rgba(85, 37, 150, 0.45)',
+  blackBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
   },
   topBar: {
     position: 'absolute',
