@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
+import * as Linking from 'expo-linking';
 import {
   ActivityIndicator,
   Modal,
@@ -8,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { COIN_PACKAGES, GIFT_CATALOG, getCoinBalance, purchaseCoins, sendGift } from '../lib/gifts';
+import { COIN_PACKAGES, GIFT_CATALOG, getCoinBalance, getCoinCheckoutUrl, sendGift } from '../lib/gifts';
 import { colors, radii, spacing } from '../theme';
 
 type GiftPickerProps = {
@@ -35,13 +37,34 @@ export function GiftPicker({
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>('gifts');
   const [coinBalance, setCoinBalance] = useState(0);
   const [sending, setSending] = useState<string | null>(null);
-  const [purchasing, setPurchasing] = useState<number | null>(null);
+  const [redirectingPackageId, setRedirectingPackageId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  async function refreshCoinBalance() {
+    try {
+      setCoinBalance(await getCoinBalance(senderId));
+    } catch {
+      // Ignore refresh errors in the sheet.
+    }
+  }
 
   useEffect(() => {
     if (!visible) return;
     setError(null);
-    getCoinBalance(senderId).then(setCoinBalance).catch(() => {});
+    void refreshCoinBalance();
+  }, [visible, senderId]);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    function handleAppStateChange(nextState: AppStateStatus) {
+      if (nextState === 'active') {
+        void refreshCoinBalance();
+      }
+    }
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
   }, [visible, senderId]);
 
   async function handleSendGift(giftTypeId: string, coinCost: number) {
@@ -62,17 +85,15 @@ export function GiftPicker({
     }
   }
 
-  async function handlePurchaseCoins(coinAmount: number) {
-    setPurchasing(coinAmount);
+  async function handlePurchaseCoins(packageId: string) {
+    setRedirectingPackageId(packageId);
     setError(null);
     try {
-      await purchaseCoins(senderId, coinAmount);
-      setCoinBalance((prev) => prev + coinAmount);
-      setActiveSheet('gifts');
+      await Linking.openURL(getCoinCheckoutUrl(senderId, packageId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to add coins.');
+      setError(e instanceof Error ? e.message : 'Failed to open coin checkout.');
     } finally {
-      setPurchasing(null);
+      setRedirectingPackageId(null);
     }
   }
 
@@ -146,10 +167,10 @@ export function GiftPicker({
               </Text>
               {COIN_PACKAGES.map((pkg) => (
                 <Pressable
-                  key={pkg.coins}
+                  key={pkg.id}
                   style={({ pressed }) => [styles.packageRow, pressed && styles.pressed]}
-                  onPress={() => { void handlePurchaseCoins(pkg.coins); }}
-                  disabled={purchasing !== null}
+                  onPress={() => { void handlePurchaseCoins(pkg.id); }}
+                  disabled={redirectingPackageId !== null}
                 >
                   <View style={styles.packageLeft}>
                     <Text style={styles.packageCoinIcon}>🪙</Text>
@@ -167,17 +188,17 @@ export function GiftPicker({
                       <Text style={styles.packageSub}>Podium Coins</Text>
                     </View>
                   </View>
-                  {purchasing === pkg.coins ? (
+                  {redirectingPackageId === pkg.id ? (
                     <ActivityIndicator color={colors.textPrimary} size="small" />
                   ) : (
                     <View style={styles.priceTag}>
-                      <Text style={styles.priceText}>{pkg.price}</Text>
+                      <Text style={styles.priceText}>{pkg.priceLabel}</Text>
                     </View>
                   )}
                 </Pressable>
               ))}
               <Text style={styles.demoNote}>
-                Demo mode — coins are credited instantly.{'\n'}Connect Stripe to enable real payments.
+                Checkout opens on the website and credits your balance after Stripe confirms the payment.
               </Text>
             </ScrollView>
           )}

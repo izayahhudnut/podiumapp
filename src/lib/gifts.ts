@@ -1,4 +1,5 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { env } from './env';
 import { getSupabaseClient } from './supabase';
 
 export type GiftType = {
@@ -20,6 +21,14 @@ export type GiftEvent = {
   created_at: string;
 };
 
+export type CoinPackage = {
+  id: string;
+  coins: number;
+  priceLabel: string;
+  priceCents: number;
+  bonus: string;
+};
+
 export const GIFT_CATALOG: GiftType[] = [
   { id: 'rose',    name: 'Rose',    emoji: '🌹', coin_cost: 10,  diamond_value: 5   },
   { id: 'fire',    name: 'Fire',    emoji: '🔥', coin_cost: 25,  diamond_value: 12  },
@@ -29,11 +38,11 @@ export const GIFT_CATALOG: GiftType[] = [
   { id: 'crown',   name: 'Crown',   emoji: '👑', coin_cost: 500, diamond_value: 280 },
 ];
 
-export const COIN_PACKAGES = [
-  { coins: 100,  price: '$0.99',  bonus: ''           },
-  { coins: 500,  price: '$3.99',  bonus: 'Popular'    },
-  { coins: 1200, price: '$7.99',  bonus: 'Best Value' },
-  { coins: 2500, price: '$14.99', bonus: ''           },
+export const COIN_PACKAGES: CoinPackage[] = [
+  { id: 'starter', coins: 100, priceLabel: '$0.99', priceCents: 99, bonus: '' },
+  { id: 'popular', coins: 500, priceLabel: '$3.99', priceCents: 399, bonus: 'Popular' },
+  { id: 'value', coins: 1200, priceLabel: '$7.99', priceCents: 799, bonus: 'Best Value' },
+  { id: 'creator', coins: 2500, priceLabel: '$14.99', priceCents: 1499, bonus: '' },
 ];
 
 export async function getCoinBalance(userId: string): Promise<number> {
@@ -56,14 +65,18 @@ export async function getDiamondBalance(userId: string): Promise<{ balance: numb
   return data ?? { balance: 0, total_earned: 0 };
 }
 
-// Demo: credits coins immediately. Replace with Stripe checkout in production.
-export async function purchaseCoins(userId: string, amount: number): Promise<void> {
-  const supabase = getSupabaseClient();
-  const { error } = await supabase.rpc('add_coins', {
-    p_user_id: userId,
-    p_amount: amount,
-  });
-  if (error) throw error;
+export function getCoinCheckoutUrl(userId: string, packageId?: string): string {
+  if (!env.webUrl) {
+    throw new Error('Coin checkout is not configured yet. Add EXPO_PUBLIC_WEB_URL.');
+  }
+
+  const url = new URL('/coins', env.webUrl);
+  url.searchParams.set('userId', userId);
+  if (packageId) {
+    url.searchParams.set('package', packageId);
+  }
+
+  return url.toString();
 }
 
 export async function sendGift(

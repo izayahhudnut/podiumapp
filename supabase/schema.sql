@@ -233,10 +233,25 @@ create table if not exists public.gift_events (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.coin_purchase_transactions (
+  id uuid primary key default gen_random_uuid(),
+  stripe_session_id text not null unique,
+  stripe_payment_intent_id text,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  package_id text not null,
+  coin_amount integer not null check (coin_amount > 0),
+  amount_cents integer not null check (amount_cents > 0),
+  currency text not null default 'usd',
+  stripe_customer_email text,
+  fulfilled_at timestamptz not null default timezone('utc', now()),
+  created_at timestamptz not null default timezone('utc', now())
+);
+
 alter table public.gift_types enable row level security;
 alter table public.coin_balances enable row level security;
 alter table public.diamond_balances enable row level security;
 alter table public.gift_events enable row level security;
+alter table public.coin_purchase_transactions enable row level security;
 
 drop policy if exists "anyone can read gift types" on public.gift_types;
 create policy "anyone can read gift types"
@@ -255,6 +270,11 @@ using (auth.uid() = user_id);
 drop policy if exists "anyone can read gift events" on public.gift_events;
 create policy "anyone can read gift events"
 on public.gift_events for select to authenticated using (true);
+
+drop policy if exists "users can read own coin purchases" on public.coin_purchase_transactions;
+create policy "users can read own coin purchases"
+on public.coin_purchase_transactions for select to authenticated
+using (auth.uid() = user_id);
 
 -- Seed gift catalog
 insert into public.gift_types (id, name, emoji, coin_cost, diamond_value) values
@@ -311,6 +331,52 @@ begin
   ) returning id into v_event_id;
 
   return v_event_id;
+end;
+$$;
+
+create or replace function public.fulfill_coin_purchase(
+  p_user_id uuid,
+  p_session_id text,
+  p_payment_intent_id text,
+  p_package_id text,
+  p_coin_amount integer,
+  p_amount_cents integer,
+  p_currency text default 'usd',
+  p_customer_email text default null
+) returns boolean language plpgsql security definer as $$
+begin
+  insert into public.coin_purchase_transactions (
+    stripe_session_id,
+    stripe_payment_intent_id,
+    user_id,
+    package_id,
+    coin_amount,
+    amount_cents,
+    currency,
+    stripe_customer_email
+  ) values (
+    p_session_id,
+    p_payment_intent_id,
+    p_user_id,
+    p_package_id,
+    p_coin_amount,
+    p_amount_cents,
+    lower(coalesce(p_currency, 'usd')),
+    p_customer_email
+  )
+  on conflict (stripe_session_id) do nothing;
+
+  if not found then
+    return false;
+  end if;
+
+  insert into public.coin_balances (user_id, balance)
+  values (p_user_id, p_coin_amount)
+  on conflict (user_id) do update
+  set balance = public.coin_balances.balance + p_coin_amount,
+      updated_at = now();
+
+  return true;
 end;
 $$;
 
