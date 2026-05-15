@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { COIN_PACKAGES, GIFT_CATALOG, getCoinBalance, createCoinCheckoutSession, sendGift } from '../lib/gifts';
+import { trackLog, trackTrace } from '../lib/opscompanion';
 import { colors, radii, spacing } from '../theme';
 
 type GiftPickerProps = {
@@ -69,6 +70,11 @@ export function GiftPicker({
 
   async function handleSendGift(giftTypeId: string, coinCost: number) {
     if (coinBalance < coinCost) {
+      void trackLog({
+        eventName: 'gifts.insufficient_balance',
+        body: { giftTypeId, coinCost, coinBalance, debateId },
+        attributes: { feature: 'gifts', 'debate.id': debateId, 'gift.type_id': giftTypeId },
+      });
       setActiveSheet('coins');
       return;
     }
@@ -86,12 +92,30 @@ export function GiftPicker({
   }
 
   async function handlePurchaseCoins(packageId: string) {
+    const startedAt = Date.now();
     setRedirectingPackageId(packageId);
     setError(null);
     try {
       const checkoutUrl = await createCoinCheckoutSession(packageId);
       await Linking.openURL(checkoutUrl);
+      void trackLog({
+        eventName: 'coins.checkout_redirect.opened',
+        body: { packageId, debateId },
+        attributes: { feature: 'payments', 'user.id': senderId, 'package.id': packageId },
+      });
+      void trackTrace({
+        name: 'coins.checkout_redirect',
+        startTimeMs: startedAt,
+        endTimeMs: Date.now(),
+        attributes: { feature: 'payments', 'user.id': senderId, 'package.id': packageId },
+      });
     } catch (e) {
+      void trackLog({
+        eventName: 'coins.checkout_redirect.failed',
+        severity: 'ERROR',
+        body: e instanceof Error ? e.message : 'Failed to open coin checkout.',
+        attributes: { feature: 'payments', 'user.id': senderId, 'package.id': packageId },
+      });
       setError(e instanceof Error ? e.message : 'Failed to open coin checkout.');
     } finally {
       setRedirectingPackageId(null);

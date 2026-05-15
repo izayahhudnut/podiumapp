@@ -38,6 +38,7 @@ type ProfileScreenProps = {
   likedDebates: DebateCardItem[];
   savedDebates: DebateCardItem[];
   savedDebateIds: Set<string>;
+  coinBalance: number;
   editSubmitting?: boolean;
   editError?: string | null;
   onEditProfile: (values: EditProfileValues) => Promise<void>;
@@ -95,6 +96,7 @@ export function ProfileScreen({
   likedDebates,
   savedDebates,
   savedDebateIds,
+  coinBalance,
   editSubmitting = false,
   editError = null,
   onEditProfile,
@@ -222,6 +224,21 @@ export function ProfileScreen({
             <Text style={styles.name}>{userName}</Text>
             <Text style={styles.usernameText}>@{displayUsername}</Text>
             {bio ? <Text style={styles.bioText}>{bio}</Text> : null}
+          </View>
+
+          <View style={styles.walletCard}>
+            <View style={styles.walletHeader}>
+              <Text style={styles.walletLabel}>Coin Balance</Text>
+              <Text style={styles.walletEmoji}>🪙</Text>
+            </View>
+            <Text style={styles.walletValue}>{coinBalance.toLocaleString()}</Text>
+            <Text style={styles.walletSubtext}>Use coins to send gifts during live debates.</Text>
+            <Pressable
+              style={({ pressed }) => [styles.walletButton, pressed && styles.pressed]}
+              onPress={() => setIsCoinSheetOpen(true)}
+            >
+              <Text style={styles.walletButtonText}>Buy More Coins</Text>
+            </Pressable>
           </View>
 
           <View style={styles.actions}>
@@ -591,6 +608,56 @@ const styles = StyleSheet.create({
   },
   bioBlock: {
     gap: spacing.xs,
+  },
+  walletCard: {
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radii.lg,
+    borderCurve: 'continuous',
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  walletHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  walletLabel: {
+    color: colors.textDim,
+    fontSize: 12,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  walletEmoji: {
+    fontSize: 18,
+  },
+  walletValue: {
+    color: colors.textPrimary,
+    fontSize: 28,
+    fontWeight: '600',
+  },
+  walletSubtext: {
+    color: colors.textDim,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
+  },
+  walletButton: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    borderCurve: 'continuous',
+    backgroundColor: colors.textPrimary,
+  },
+  walletButtonText: {
+    color: colors.background,
+    fontSize: 13,
+    fontWeight: '600',
   },
   name: {
     color: colors.textPrimary,

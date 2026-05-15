@@ -65,6 +65,7 @@ import {
 import type { DebateCardItem } from './src/data/mockDebates';
 import { uploadDebateThumbnail } from './src/lib/storage';
 import { getEnvErrorMessage } from './src/lib/env';
+import { getCoinBalance } from './src/lib/gifts';
 import { trackLog, trackTrace } from './src/lib/opscompanion';
 import { colors } from './src/theme';
 
@@ -272,6 +273,7 @@ export default function App() {
   const [savedDebates, setSavedDebates] = useState<DebateRecord[]>([]);
   const [savedDebateIds, setSavedDebateIds] = useState<Set<string>>(new Set());
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [coinBalance, setCoinBalance] = useState(0);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -394,6 +396,7 @@ export default function App() {
       setSavedDebates([]);
       setSavedDebateIds(new Set());
       setFollowingIds(new Set());
+      setCoinBalance(0);
       setFollowerCount(0);
       setFollowingCount(0);
       setDebatesLoading(false);
@@ -445,12 +448,13 @@ export default function App() {
           setUserDebates([]);
           setLikedDebates([]);
           setLikedDebateIds(new Set());
+          setCoinBalance(0);
         }
         return;
       }
 
       try {
-        const [profile, myDebates, myLiked, myLikedIds, mySaved, mySavedIds, myFollowingIds, myFollowerCount, myFollowingCount] = await Promise.all([
+        const [profile, myDebates, myLiked, myLikedIds, mySaved, mySavedIds, myFollowingIds, myFollowerCount, myFollowingCount, myCoinBalance] = await Promise.all([
           getOrCreateProfile(session.user.id),
           getUserDebates(session.user.id),
           getLikedDebates(session.user.id),
@@ -460,6 +464,7 @@ export default function App() {
           getFollowingIds(session.user.id),
           getFollowerCount(session.user.id),
           getFollowingCount(session.user.id),
+          getCoinBalance(session.user.id),
         ]);
         if (active) {
           setUserProfile(profile);
@@ -469,6 +474,7 @@ export default function App() {
           setSavedDebates(mySaved);
           setSavedDebateIds(new Set(mySavedIds));
           setFollowingIds(new Set(myFollowingIds));
+          setCoinBalance(myCoinBalance);
           setFollowerCount(myFollowerCount);
           setFollowingCount(myFollowingCount);
         }
@@ -489,6 +495,23 @@ export default function App() {
       unsubscribeFromChannel(channel);
     };
   }, [configError, session]);
+
+  useEffect(() => {
+    if (screen !== 'profile' || !session) return;
+    let active = true;
+
+    getCoinBalance(session.user.id)
+      .then((balance) => {
+        if (active) {
+          setCoinBalance(balance);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [screen, session]);
 
   // Presence subscriptions for live debates
   useEffect(() => {
@@ -641,6 +664,7 @@ export default function App() {
       setSavedDebates([]);
       setSavedDebateIds(new Set());
       setFollowingIds(new Set());
+      setCoinBalance(0);
       setFollowerCount(0);
       setFollowingCount(0);
       setActiveLiveDebate(null);
@@ -873,7 +897,7 @@ export default function App() {
         topic: values.topic,
         description: values.description,
         isPublic: values.isPublic,
-        factCheckEnabled: values.factCheckEnabled,
+        factCheckEnabled: false,
         audienceCommentsEnabled: values.audienceCommentsEnabled,
         askToJoinEnabled: values.askToJoinEnabled,
         scheduledFor: values.scheduledFor,
@@ -1101,6 +1125,7 @@ export default function App() {
             likedDebates={likedDebateItems}
             savedDebates={savedDebateItems}
             savedDebateIds={savedDebateIds}
+            coinBalance={coinBalance}
             editSubmitting={editSubmitting}
             editError={editError}
             onEditProfile={handleEditProfile}

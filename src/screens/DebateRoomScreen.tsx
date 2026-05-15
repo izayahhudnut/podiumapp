@@ -49,7 +49,6 @@ import {
 import { fetchLivekitToken } from '../lib/livekit';
 import { trackLog } from '../lib/opscompanion';
 import { colors, radii, spacing } from '../theme';
-import { FactCheckStrip } from '../components/FactCheckStrip';
 import { GiftOverlay, type GiftOverlayItem } from '../components/GiftOverlay';
 import { GiftPicker } from '../components/GiftPicker';
 import { LiveComment, type LiveCommentItem } from '../components/LiveComment';
@@ -224,14 +223,12 @@ function isDebatePublic(debate: DebateCardItem | DebateRecord) {
 function getDebateFeatureSettings(debate: DebateCardItem | DebateRecord) {
   if ('fact_check_enabled' in debate) {
     return {
-      factCheckEnabled: debate.fact_check_enabled,
       audienceCommentsEnabled: debate.audience_comments_enabled,
       askToJoinEnabled: debate.ask_to_join_enabled,
     };
   }
 
   return {
-    factCheckEnabled: true,
     audienceCommentsEnabled: true,
     askToJoinEnabled: !debate.isPublic,
   };
@@ -276,6 +273,7 @@ export function DebateRoomScreen({
   const [isInfoSheetOpen, setIsInfoSheetOpen] = useState(false);
   const [giftOverlayItems, setGiftOverlayItems] = useState<GiftOverlayItem[]>([]);
   const [likeCount, setLikeCount] = useState(0);
+  const [hasRequestedToJoin, setHasRequestedToJoin] = useState(false);
   const [permission] = useCameraPermissions();
 
   // LiveKit state
@@ -292,8 +290,7 @@ export function DebateRoomScreen({
     'host_user_id' in debate ? debate.host_user_id : (debate.hostId ?? null);
   const isGiftEnabled = isRealtimeRoom && Boolean(hostUserId) && currentUser?.id !== hostUserId;
   const hostParticipant = getHostParticipant(debate, currentUser);
-  const { factCheckEnabled, audienceCommentsEnabled, askToJoinEnabled } =
-    getDebateFeatureSettings(debate);
+  const { audienceCommentsEnabled, askToJoinEnabled } = getDebateFeatureSettings(debate);
   const isPrivateDebate = !isDebatePublic(debate);
   const isLiveCreator = Boolean(
     currentUser && 'host_user_id' in debate && debate.host_user_id === currentUser.id,
@@ -320,7 +317,6 @@ export function DebateRoomScreen({
     'thumbnail_url' in debate ? (debate.thumbnail_url ?? null) : (debate.image ?? null);
   const description = 'description' in debate ? (debate.description ?? '') : '';
   const viewerLabel = room?.viewers ?? `${visibleParticipants.length}`;
-  const factCheck = room?.factCheck ?? liveRoom.factCheck;
   const bottomBarOffset = keyboardOffset > 0 ? keyboardOffset + spacing.md : 0;
   const actionRailOffset = keyboardOffset > 0 ? bottomBarOffset + 94 : 126;
 
@@ -467,7 +463,7 @@ export function DebateRoomScreen({
         user_avatar: currentUser.avatar,
         is_host: isHost,
         joined_at: new Date().toISOString(),
-        request_to_join: !isHost && requiresAdmission,
+        request_to_join: !isHost && requiresAdmission && hasRequestedToJoin,
         stage_state: isHost
           ? {
               [currentUser.id]: {
@@ -496,7 +492,20 @@ export function DebateRoomScreen({
       void channel.untrack();
       unsubscribeFromChannel(channel);
     };
-  }, [canUseRealtimeFeatures, currentUser?.avatar, currentUser?.id, currentUser?.name, debate, liveDebateId, requiresAdmission]);
+  }, [canUseRealtimeFeatures, currentUser?.avatar, currentUser?.id, currentUser?.name, debate, liveDebateId, requiresAdmission, hasRequestedToJoin]);
+
+  // When user taps "Request to join", re-track presence with request_to_join = true
+  useEffect(() => {
+    if (!hasRequestedToJoin || !presenceChannelRef.current || !currentUser) return;
+    void presenceChannelRef.current.track({
+      user_id: currentUser.id,
+      user_name: currentUser.name,
+      user_avatar: currentUser.avatar,
+      is_host: false,
+      joined_at: new Date().toISOString(),
+      request_to_join: true,
+    });
+  }, [hasRequestedToJoin, currentUser]);
 
   // Build participants from mock data when not in realtime room
   useEffect(() => {
@@ -669,7 +678,7 @@ export function DebateRoomScreen({
         body: { facing: cameraFacing === 'front' ? 'back' : 'front', debateId: liveDebateId ?? null },
         attributes: { feature: 'media', 'debate.id': liveDebateId ?? 'unknown' },
       });
-      setCameraFacing((v) => (v === 'front' ? 'back' : 'front'));
+      setCameraFacing((current) => (current === 'front' ? 'back' : 'front'));
     }
   }
 
@@ -844,16 +853,32 @@ export function DebateRoomScreen({
           <LiveVideoLayer
             serverUrl={livekitUrl!}
             token={livekitToken!}
-            isHost={showCameraPreview}
             micEnabled={micEnabled}
             cameraEnabled={cameraEnabled}
             cameraFacing={cameraFacing}
+            hostName={hostParticipant.name}
           />
         </View>
       ) : (
         <>
           {showCameraPreview && cameraEnabled && permission?.granted ? (
             <CameraView facing={cameraFacing} style={styles.cameraBackground} />
+          ) : showCameraPreview && !cameraEnabled ? (
+            <View style={styles.cameraOffTile}>
+              <View style={styles.cameraOffAvatar}>
+                <Text style={styles.cameraOffAvatarText}>
+                  {(activeMediaParticipant?.name ?? 'U')
+                    .split(' ')
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((w) => w[0]?.toUpperCase() ?? '')
+                    .join('') || '??'}
+                </Text>
+              </View>
+              <Text style={styles.cameraOffName} numberOfLines={1}>
+                {activeMediaParticipant?.name ?? 'You'}
+              </Text>
+            </View>
           ) : null}
         </>
       )}
@@ -914,18 +939,6 @@ export function DebateRoomScreen({
       <View style={styles.stageSpacer} />
 
       <View style={styles.overlayArea}>
-        {factCheckEnabled ? <FactCheckStrip factCheck={factCheck} /> : null}
-
-        {requiresAdmission && !hasLiveAccess ? (
-          <View style={styles.waitingCard}>
-            <Text style={styles.waitingTitle}>Waiting for host approval</Text>
-            <Text style={styles.waitingCopy}>
-              This private debate is invite-only. The host needs to admit you before you can
-              join the live room.
-            </Text>
-          </View>
-        ) : null}
-
         <View style={styles.messagesWindow}>
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -992,6 +1005,66 @@ export function DebateRoomScreen({
           </Pressable>
         </View>
       </View>
+
+      {/* Request to join bottom sheet */}
+      {requiresAdmission && !hasLiveAccess && currentUser ? (
+        <Modal
+          animationType="slide"
+          transparent
+          visible
+          onRequestClose={() => {}}
+        >
+          <View style={styles.modalRoot} pointerEvents="box-none">
+            <View style={styles.requestSheet}>
+              {/* Overlapping avatar circles */}
+              <View style={styles.requestAvatarRow}>
+                {[hostParticipant, ...pendingParticipants.slice(0, 2)].map((p, i) => (
+                  <View
+                    key={p.id}
+                    style={[
+                      styles.requestAvatar,
+                      { marginLeft: i === 0 ? 0 : -14, zIndex: 10 - i },
+                    ]}
+                  >
+                    <Text style={styles.requestAvatarText}>{p.avatar}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={styles.requestTitle}>
+                {hasRequestedToJoin ? 'Waiting for host approval' : 'Request to join as a guest'}
+              </Text>
+              <Text style={styles.requestSubtitle}>
+                {hasRequestedToJoin
+                  ? 'The host will admit you shortly.'
+                  : pendingParticipants.length > 0
+                    ? `${pendingParticipants.length} viewer${pendingParticipants.length === 1 ? '' : 's'} are requesting`
+                    : 'Ask the host to join the live debate.'}
+              </Text>
+
+              {!hasRequestedToJoin ? (
+                <Pressable
+                  style={({ pressed }) => [styles.requestButton, pressed && styles.pressed]}
+                  onPress={() => setHasRequestedToJoin(true)}
+                >
+                  <Text style={styles.requestButtonText}>Request</Text>
+                </Pressable>
+              ) : (
+                <View style={[styles.requestButton, styles.requestButtonWaiting]}>
+                  <Text style={styles.requestButtonText}>Waiting…</Text>
+                </View>
+              )}
+
+              <Pressable
+                style={({ pressed }) => [styles.requestDismiss, pressed && styles.pressed]}
+                onPress={onClose}
+              >
+                <Text style={styles.requestDismissText}>Leave room</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
 
       {/* Gift picker modal */}
       {isGiftEnabled && currentUser && hostUserId ? (
@@ -1213,6 +1286,32 @@ const styles = StyleSheet.create({
   cameraBackground: {
     ...StyleSheet.absoluteFillObject,
   },
+  cameraOffTile: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111',
+    gap: 10,
+  },
+  cameraOffAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#8C35F8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraOffAvatarText: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '300',
+  },
+  cameraOffName: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 14,
+    fontWeight: '500',
+    maxWidth: 200,
+  },
   thumbnailBackground: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -1416,26 +1515,74 @@ const styles = StyleSheet.create({
     paddingBottom: 116,
     gap: spacing.md,
   },
-  waitingCard: {
-    maxWidth: 320,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radii.lg,
+  requestSheet: {
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
     borderCurve: 'continuous',
-    backgroundColor: 'rgba(11, 11, 16, 0.68)',
-    borderWidth: 1,
-    borderColor: colors.borderOverlay,
-    gap: spacing.xs,
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: 44,
+    alignItems: 'center',
+    gap: spacing.md,
   },
-  waitingTitle: {
-    color: colors.textPrimary,
-    fontSize: 15,
+  requestAvatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  requestAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8C35F8',
+    borderWidth: 2.5,
+    borderColor: '#1a1a1a',
+  },
+  requestAvatarText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
   },
-  waitingCopy: {
-    color: colors.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
+  requestTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  requestSubtitle: {
+    color: colors.textDim,
+    fontSize: 14,
+    fontWeight: '400',
+    textAlign: 'center',
+    marginTop: -spacing.xs,
+  },
+  requestButton: {
+    width: '100%',
+    height: 52,
+    borderRadius: radii.pill,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2387A',
+    marginTop: spacing.sm,
+  },
+  requestButtonWaiting: {
+    backgroundColor: 'rgba(242, 56, 122, 0.4)',
+  },
+  requestButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  requestDismiss: {
+    paddingVertical: spacing.sm,
+  },
+  requestDismissText: {
+    color: colors.textDim,
+    fontSize: 14,
     fontWeight: '400',
   },
   messagesWindow: {
