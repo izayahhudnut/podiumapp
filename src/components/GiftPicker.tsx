@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { COIN_PACKAGES, GIFT_CATALOG, getCoinBalance, getCoinCheckoutUrl, sendGift } from '../lib/gifts';
+import { COIN_PACKAGES, GIFT_CATALOG, getCoinBalance, createCoinCheckoutSession, sendGift } from '../lib/gifts';
 import { colors, radii, spacing } from '../theme';
 
 type GiftPickerProps = {
@@ -89,7 +89,8 @@ export function GiftPicker({
     setRedirectingPackageId(packageId);
     setError(null);
     try {
-      await Linking.openURL(getCoinCheckoutUrl(senderId, packageId));
+      const checkoutUrl = await createCoinCheckoutSession(packageId);
+      await Linking.openURL(checkoutUrl);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to open coin checkout.');
     } finally {
@@ -198,7 +199,7 @@ export function GiftPicker({
                 </Pressable>
               ))}
               <Text style={styles.demoNote}>
-                Checkout opens on the website and credits your balance after Stripe confirms the payment.
+                Secure checkout powered by Stripe. Your coin balance is credited automatically after payment.
               </Text>
             </ScrollView>
           )}

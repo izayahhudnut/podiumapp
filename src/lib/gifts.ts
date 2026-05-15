@@ -1,5 +1,4 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { env } from './env';
 import { getSupabaseClient } from './supabase';
 
 export type GiftType = {
@@ -65,18 +64,15 @@ export async function getDiamondBalance(userId: string): Promise<{ balance: numb
   return data ?? { balance: 0, total_earned: 0 };
 }
 
-export function getCoinCheckoutUrl(userId: string, packageId?: string): string {
-  if (!env.webUrl) {
-    throw new Error('Coin checkout is not configured yet. Add EXPO_PUBLIC_WEB_URL.');
-  }
-
-  const url = new URL('/coins', env.webUrl);
-  url.searchParams.set('userId', userId);
-  if (packageId) {
-    url.searchParams.set('package', packageId);
-  }
-
-  return url.toString();
+export async function createCoinCheckoutSession(packageId: string): Promise<string> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.functions.invoke<{ url: string; error?: string }>(
+    'create-coin-checkout',
+    { body: { packageId } },
+  );
+  if (error) throw new Error(error.message);
+  if (!data?.url) throw new Error('No checkout URL returned from server.');
+  return data.url;
 }
 
 export async function sendGift(
