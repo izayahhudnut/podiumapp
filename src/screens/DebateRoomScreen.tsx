@@ -283,7 +283,7 @@ export function DebateRoomScreen({
   const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(showCameraPreview);
-  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
+  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
   const presenceChannelRef = useRef<ReturnType<typeof subscribeToDebatePresence> | null>(null);
 
   const activeMediaParticipant = mediaParticipant ?? currentUser;
