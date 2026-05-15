@@ -7,6 +7,7 @@ export type ProfileRecord = {
   username: string | null;
   bio: string | null;
   avatar_url: string | null;
+  stripe_customer_id: string | null;
   created_at: string;
 };
 

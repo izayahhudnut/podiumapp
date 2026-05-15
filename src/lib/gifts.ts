@@ -75,6 +75,17 @@ export async function createCoinCheckoutSession(packageId: string): Promise<stri
   return data.url;
 }
 
+export async function createCustomerPortalSession(): Promise<string> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.functions.invoke<{ url: string; error?: string }>(
+    'customer-portal',
+    { body: {} },
+  );
+  if (error) throw new Error(error.message);
+  if (!data?.url) throw new Error('No portal URL returned from server.');
+  return data.url;
+}
+
 export async function sendGift(
   debateId: string,
   senderId: string,

@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 
+import { CoinSheetModal } from '../components/CoinSheetModal';
 import { DebateCard } from '../components/DebateCard';
 import type { DebateCardItem } from '../data/mockDebates';
 import { colors, radii, spacing } from '../theme';
@@ -28,6 +29,7 @@ export type EditProfileValues = {
 type ProfileScreenProps = {
   userName: string;
   userEmail: string;
+  userId: string;
   userAvatarUri?: string | null;
   username: string | null;
   bio: string | null;
@@ -84,6 +86,7 @@ function getBroadcastExpiryLabel(expiresAt: string | null | undefined, savedPerm
 export function ProfileScreen({
   userName,
   userEmail,
+  userId,
   userAvatarUri,
   username,
   bio,
@@ -105,6 +108,7 @@ export function ProfileScreen({
 }: ProfileScreenProps) {
   const [tab, setTab] = useState<Tab>('debates');
   const [isEditing, setIsEditing] = useState(false);
+  const [isCoinSheetOpen, setIsCoinSheetOpen] = useState(false);
   const [selectedDebateStats, setSelectedDebateStats] = useState<DebateCardItem | null>(null);
 
   // Edit form state
@@ -229,6 +233,12 @@ export function ProfileScreen({
             </Pressable>
             <Pressable
               style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}
+              onPress={() => setIsCoinSheetOpen(true)}
+            >
+              <Text style={styles.coinActionText}>🪙 Buy Coins</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}
               onPress={onSignOut}
             >
               <Text style={styles.secondaryActionText}>Sign Out</Text>
@@ -329,6 +339,12 @@ export function ProfileScreen({
           </View>
         )}
       </ScrollView>
+
+      <CoinSheetModal
+        visible={isCoinSheetOpen}
+        userId={userId}
+        onClose={() => setIsCoinSheetOpen(false)}
+      />
 
       {/* Edit Profile Modal */}
       <Modal
@@ -626,6 +642,11 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 14,
     fontWeight: '400',
+  },
+  coinActionText: {
+    color: '#C07EFF',
+    fontSize: 14,
+    fontWeight: '500',
   },
   tabs: {
     flexDirection: 'row',

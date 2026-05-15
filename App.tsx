@@ -1088,6 +1088,7 @@ export default function App() {
           <ProfileScreen
             userName={currentUserName}
             userEmail={session.user.email ?? ''}
+            userId={session.user.id}
             userAvatarUri={
               userProfile?.avatar_url ??
               (session.user.user_metadata?.avatar_url as string | undefined) ??

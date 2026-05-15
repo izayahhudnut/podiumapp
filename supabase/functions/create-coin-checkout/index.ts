@@ -61,9 +61,33 @@ Deno.serve(async (req) => {
 
     const stripe = new Stripe(stripeKey, { apiVersion: '2024-12-18.acacia' });
 
+    // Get or create a Stripe Customer so payment methods are saved
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('stripe_customer_id')
+      .eq('user_id', user.id)
+      .single<{ stripe_customer_id: string | null }>();
+
+    let stripeCustomerId = profile?.stripe_customer_id ?? null;
+
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { supabase_user_id: user.id },
+      });
+      stripeCustomerId = customer.id;
+      await supabase
+        .from('profiles')
+        .upsert({ user_id: user.id, stripe_customer_id: stripeCustomerId }, { onConflict: 'user_id' });
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      customer: stripeCustomerId,
       payment_method_types: ['card'],
+      payment_intent_data: {
+        setup_future_usage: 'on_session', // saves card for future purchases
+      },
       line_items: [
         {
           quantity: 1,
@@ -73,7 +97,6 @@ Deno.serve(async (req) => {
             product_data: {
               name: pkg.label,
               description: 'Podium coins used to send gifts to debate hosts',
-              images: [],
             },
           },
         },
@@ -83,7 +106,6 @@ Deno.serve(async (req) => {
         package_id: packageId,
         coin_amount: String(pkg.coins),
       },
-      customer_email: user.email,
       success_url: `${appScheme}://coins/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appScheme}://coins/cancel`,
     });

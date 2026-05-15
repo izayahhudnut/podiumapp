@@ -36,9 +36,11 @@ create table if not exists public.profiles (
   username text,
   bio text,
   avatar_url text,
+  stripe_customer_id text,
   created_at timestamptz not null default timezone('utc', now()),
   unique(user_id)
 );
+alter table public.profiles add column if not exists stripe_customer_id text;
 
 create table if not exists public.debate_likes (
   id uuid primary key default gen_random_uuid(),
