@@ -23,6 +23,7 @@ type LiveVideoLayerProps = {
   isHost: boolean;
   micEnabled: boolean;
   cameraEnabled: boolean;
+  cameraFacing?: 'front' | 'back';
 };
 
 // ---------------------------------------------------------------------------
@@ -130,9 +131,11 @@ function VideoGrid() {
 function LocalMediaSync({
   micEnabled,
   cameraEnabled,
+  cameraFacing,
 }: {
   micEnabled: boolean;
   cameraEnabled: boolean;
+  cameraFacing?: 'front' | 'back';
 }) {
   const { localParticipant } = useLocalParticipant();
 
@@ -143,6 +146,18 @@ function LocalMediaSync({
   useEffect(() => {
     localParticipant.setCameraEnabled(cameraEnabled).catch(() => {});
   }, [cameraEnabled, localParticipant]);
+
+  useEffect(() => {
+    if (!cameraEnabled || !cameraFacing) return;
+    // Re-publish camera with new facing mode when flipped
+    localParticipant.setCameraEnabled(false)
+      .then(() => localParticipant.setCameraEnabled(true, {
+        videoEncoding: undefined,
+        videoSimulcastLayers: undefined,
+      } as Parameters<typeof localParticipant.setCameraEnabled>[1]))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraFacing]);
 
   return null;
 }
@@ -172,6 +187,7 @@ export function LiveVideoLayer({
   isHost,
   micEnabled,
   cameraEnabled,
+  cameraFacing,
 }: LiveVideoLayerProps) {
   return (
     <LiveKitRoom
@@ -183,7 +199,7 @@ export function LiveVideoLayer({
     >
       <LiveKitAudioSession />
       <VideoGrid />
-      <LocalMediaSync micEnabled={micEnabled} cameraEnabled={cameraEnabled} />
+      <LocalMediaSync micEnabled={micEnabled} cameraEnabled={cameraEnabled} cameraFacing={cameraFacing} />
     </LiveKitRoom>
   );
 }

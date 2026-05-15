@@ -43,6 +43,7 @@ type ProfileScreenProps = {
   onOpenDebate: (debateId: string) => void;
   onSaveDebate: (debateId: string) => void;
   onDeleteDebate: (debateId: string) => void;
+  onSaveBroadcast?: (debateId: string) => void;
   followerCount: number;
   followingCount: number;
 };
@@ -71,6 +72,15 @@ function formatDuration(durationSeconds?: number) {
   return `${seconds}s`;
 }
 
+function getBroadcastExpiryLabel(expiresAt: string | null | undefined, savedPermanently?: boolean): string | null {
+  if (savedPermanently) return 'Saved';
+  if (!expiresAt) return null;
+  const diffMs = new Date(expiresAt).getTime() - Date.now();
+  if (diffMs <= 0) return 'Expired';
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  return `Expires in ${diffDays}d`;
+}
+
 export function ProfileScreen({
   userName,
   userEmail,
@@ -89,6 +99,7 @@ export function ProfileScreen({
   onOpenDebate,
   onSaveDebate,
   onDeleteDebate,
+  onSaveBroadcast,
   followerCount,
   followingCount,
 }: ProfileScreenProps) {
@@ -260,6 +271,28 @@ export function ProfileScreen({
                   compact
                 />
                 <View style={styles.cardActions}>
+                  {tab === 'debates' && debate.status === 'ended' ? (
+                    (() => {
+                      const expiryLabel = getBroadcastExpiryLabel(debate.broadcastExpiresAt, debate.broadcastSavedPermanently);
+                      return expiryLabel ? (
+                        <Text style={[
+                          styles.expiryLabel,
+                          debate.broadcastSavedPermanently && styles.expiryLabelSaved,
+                        ]}>
+                          {expiryLabel}
+                        </Text>
+                      ) : null;
+                    })()
+                  ) : null}
+                  {tab === 'debates' && debate.status === 'ended' && !debate.broadcastSavedPermanently && onSaveBroadcast ? (
+                    <Pressable
+                      style={({ pressed }) => [styles.cardAction, pressed && styles.pressed]}
+                      onPress={() => onSaveBroadcast(debate.id)}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="cloud-upload-outline" size={16} color={colors.textDim} />
+                    </Pressable>
+                  ) : null}
                   {tab === 'debates' ? (
                     <Pressable
                       style={({ pressed }) => [styles.cardAction, pressed && styles.pressed]}
@@ -800,5 +833,13 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.88,
+  },
+  expiryLabel: {
+    color: colors.textFaint,
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  expiryLabelSaved: {
+    color: '#8C35F8',
   },
 });

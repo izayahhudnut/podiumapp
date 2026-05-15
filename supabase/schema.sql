@@ -418,6 +418,12 @@ create policy "authenticated users can upload thumbnails"
 on storage.objects for insert to authenticated
 with check (bucket_id = 'debate-thumbnails' and auth.uid()::text = (storage.foldername(name))[1]);
 
+-- ============================================================
+-- Broadcast save / expiry
+-- ============================================================
+alter table public.debates add column if not exists broadcast_expires_at timestamptz;
+alter table public.debates add column if not exists broadcast_saved_permanently boolean not null default false;
+
 drop policy if exists "anyone can view thumbnails" on storage.objects;
 create policy "anyone can view thumbnails"
 on storage.objects for select to public

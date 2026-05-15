@@ -53,6 +53,7 @@ import {
   getDebateMessages,
   getPublicLiveDebates,
   getPublicScheduledDebates,
+  saveBroadcastPermanently,
   startScheduledDebate,
   subscribeToDebatePresence,
   subscribeToDebates,
@@ -232,6 +233,8 @@ function mapEndedDebateToCard(
     totalJoinedCount: debate.total_joined_count,
     totalMessageCount: debate.total_message_count,
     durationSeconds: debate.duration_seconds,
+    broadcastExpiresAt: debate.broadcast_expires_at,
+    broadcastSavedPermanently: debate.broadcast_saved_permanently,
   };
 }
 
@@ -811,6 +814,22 @@ export default function App() {
     setViewingProfile({ userId, userName });
   }
 
+  async function handleSaveBroadcast(debateId: string) {
+    if (!session) return;
+    try {
+      await saveBroadcastPermanently(debateId, session.user.id);
+      setUserDebates((prev) =>
+        prev.map((d) =>
+          d.id === debateId
+            ? { ...d, broadcast_expires_at: null, broadcast_saved_permanently: true }
+            : d,
+        ),
+      );
+    } catch (error) {
+      setDebatesError(error instanceof Error ? error.message : 'Unable to save broadcast.');
+    }
+  }
+
   async function handleDeleteDebate(debateId: string) {
     if (!session) return;
     try {
@@ -1088,6 +1107,7 @@ export default function App() {
             onOpenDebate={handleOpenDebate}
             onSaveDebate={(id) => void handleToggleSave(id)}
             onDeleteDebate={(id) => void handleDeleteDebate(id)}
+            onSaveBroadcast={(id) => void handleSaveBroadcast(id)}
             followerCount={followerCount}
             followingCount={followingCount}
           />

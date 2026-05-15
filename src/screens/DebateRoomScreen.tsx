@@ -283,6 +283,7 @@ export function DebateRoomScreen({
   const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(showCameraPreview);
+  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
   const presenceChannelRef = useRef<ReturnType<typeof subscribeToDebatePresence> | null>(null);
 
   const activeMediaParticipant = mediaParticipant ?? currentUser;
@@ -365,6 +366,11 @@ export function DebateRoomScreen({
                   typeof Ionicons
                 >['name'],
                 label: 'Camera',
+              },
+              {
+                key: 'flip',
+                icon: 'camera-reverse-outline' as ComponentProps<typeof Ionicons>['name'],
+                label: 'Flip',
               },
             ]
           : []),
@@ -654,6 +660,16 @@ export function DebateRoomScreen({
         attributes: { feature: 'media', 'debate.id': liveDebateId ?? 'unknown' },
       });
       setCameraEnabled((v) => !v);
+      return;
+    }
+
+    if (actionKey === 'flip') {
+      void trackLog({
+        eventName: 'room.camera.flip',
+        body: { facing: cameraFacing === 'front' ? 'back' : 'front', debateId: liveDebateId ?? null },
+        attributes: { feature: 'media', 'debate.id': liveDebateId ?? 'unknown' },
+      });
+      setCameraFacing((v) => (v === 'front' ? 'back' : 'front'));
     }
   }
 
@@ -831,12 +847,13 @@ export function DebateRoomScreen({
             isHost={showCameraPreview}
             micEnabled={micEnabled}
             cameraEnabled={cameraEnabled}
+            cameraFacing={cameraFacing}
           />
         </View>
       ) : (
         <>
           {showCameraPreview && cameraEnabled && permission?.granted ? (
-            <CameraView facing="front" style={styles.cameraBackground} />
+            <CameraView facing={cameraFacing} style={styles.cameraBackground} />
           ) : null}
         </>
       )}
@@ -877,7 +894,7 @@ export function DebateRoomScreen({
               if (isLiveCreator && isRealtimeRoom) {
                 Alert.alert(
                   'End Broadcast',
-                  'Are you sure you want to end this broadcast? This will close the stream for all viewers.',
+                  'Are you sure you want to end this broadcast? This will close the stream for all viewers. The broadcast will be saved to your profile for 30 days — you can save it permanently from your profile.',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'End Broadcast', style: 'destructive', onPress: onClose },
@@ -931,7 +948,7 @@ export function DebateRoomScreen({
             style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}
           >
             <View style={styles.actionBubble}>
-              <Ionicons color={colors.textPrimary} name={item.icon} size={20} />
+              <Ionicons color={colors.textPrimary} name={item.icon} size={18} />
             </View>
             <Text style={styles.actionLabel}>{item.label}</Text>
           </Pressable>
@@ -1432,15 +1449,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: spacing.md,
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 10,
   },
   actionItem: {
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 3,
   },
   actionBubble: {
-    width: 52,
-    height: 52,
+    width: 44,
+    height: 44,
     borderRadius: radii.pill,
     borderCurve: 'continuous',
     alignItems: 'center',
@@ -1449,7 +1466,7 @@ const styles = StyleSheet.create({
   },
   actionLabel: {
     color: colors.textPrimary,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
   },
   bottomBar: {

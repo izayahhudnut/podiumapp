@@ -20,6 +20,8 @@ export type DebateRecord = {
   total_joined_count: number;
   total_message_count: number;
   duration_seconds: number;
+  broadcast_expires_at: string | null;
+  broadcast_saved_permanently: boolean;
   created_at: string;
 };
 
@@ -230,6 +232,7 @@ export async function endDebateWithStats(
   return withTrace('debates.end_with_stats', { feature: 'debates', 'debate.id': debateId }, async () => {
     const supabase = getSupabaseClient();
     const endedAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase
       .from('debates')
       .update({
@@ -238,6 +241,8 @@ export async function endDebateWithStats(
         total_joined_count: stats.totalJoinedCount,
         total_message_count: stats.totalMessageCount,
         duration_seconds: stats.durationSeconds,
+        broadcast_expires_at: expiresAt,
+        broadcast_saved_permanently: false,
       })
       .eq('id', debateId)
       .eq('host_user_id', hostUserId)
@@ -262,6 +267,16 @@ export async function endDebateWithStats(
 
     return data;
   });
+}
+
+export async function saveBroadcastPermanently(debateId: string, hostUserId: string) {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('debates')
+    .update({ broadcast_expires_at: null, broadcast_saved_permanently: true })
+    .eq('id', debateId)
+    .eq('host_user_id', hostUserId);
+  if (error) throw error;
 }
 
 export async function getPublicLiveDebates() {

@@ -9,6 +9,21 @@ import {
   TextInput,
   View,
 } from 'react-native';
+
+const CATEGORIES = [
+  'All',
+  'Featured',
+  'Most Popular',
+  'Politics',
+  'Sports',
+  'Science',
+  'Technology',
+  'Anime',
+  'Entertainment',
+  'Business',
+  'Health',
+  'Gaming',
+];
 import { Ionicons } from '@expo/vector-icons';
 
 import { DebateCard } from '../components/DebateCard';
@@ -38,6 +53,7 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const [tab, setTab] = useState<Tab>('live');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
 
   const q = searchQuery.trim().toLowerCase();
 
@@ -50,6 +66,14 @@ export function HomeScreen({
         (debate.topic ?? '').toLowerCase().includes(q) ||
         debate.host.toLowerCase().includes(q)
       );
+    })
+    .filter((debate) => {
+      if (selectedCategory === 'All' || selectedCategory === 'Featured') return true;
+      if (selectedCategory === 'Most Popular') return true;
+      const topic = (debate.topic ?? '').toLowerCase();
+      const title = debate.title.toLowerCase();
+      const cat = selectedCategory.toLowerCase();
+      return topic.includes(cat) || title.includes(cat);
     });
 
   return (
@@ -86,6 +110,34 @@ export function HomeScreen({
           ) : null}
         </View>
       </View>
+
+      {/* Categories */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoriesRow}
+      >
+        {CATEGORIES.map((cat) => (
+          <Pressable
+            key={cat}
+            style={({ pressed }) => [
+              styles.categoryPill,
+              selectedCategory === cat && styles.categoryPillActive,
+              pressed && styles.pressed,
+            ]}
+            onPress={() => setSelectedCategory(cat)}
+          >
+            <Text
+              style={[
+                styles.categoryPillText,
+                selectedCategory === cat && styles.categoryPillTextActive,
+              ]}
+            >
+              {cat}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
 
       <View style={styles.tabs}>
         <Pressable style={styles.tabButton} onPress={() => setTab('live')}>
@@ -208,6 +260,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '400',
     padding: 0,
+  },
+  categoriesRow: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+    flexDirection: 'row',
+  },
+  categoryPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radii.pill,
+    borderCurve: 'continuous',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  categoryPillActive: {
+    backgroundColor: '#8C35F8',
+    borderColor: '#8C35F8',
+  },
+  categoryPillText: {
+    color: colors.textDim,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  categoryPillTextActive: {
+    color: colors.textPrimary,
   },
   tabs: {
     flexDirection: 'row',

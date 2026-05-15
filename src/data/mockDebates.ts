@@ -15,6 +15,8 @@ export type DebateCardItem = {
   totalJoinedCount?: number;
   totalMessageCount?: number;
   durationSeconds?: number;
+  broadcastExpiresAt?: string | null;
+  broadcastSavedPermanently?: boolean;
 };
 
 export type FactCheckItem = {
