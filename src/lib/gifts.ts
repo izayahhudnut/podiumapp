@@ -97,7 +97,17 @@ export async function createCoinCheckoutSession(packageId: string): Promise<stri
     'create-coin-checkout',
     { body: { packageId } },
   );
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Extract the real error message from the response body when available
+    try {
+      const body = await (error as unknown as { context: Response }).context.json() as { error?: string };
+      if (body?.error) throw new Error(body.error);
+    } catch (parseErr) {
+      if (parseErr instanceof Error && parseErr.message !== error.message) throw parseErr;
+    }
+    throw new Error(error.message);
+  }
+  if (data?.error) throw new Error(data.error);
   if (!data?.url) throw new Error('No checkout URL returned from server.');
   return data.url;
 }
