@@ -12,12 +12,12 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 
 import { CoinSheetModal } from '../components/CoinSheetModal';
-import { DebateCard } from '../components/DebateCard';
 import type { DebateCardItem } from '../data/mockDebates';
-import { colors, radii, spacing } from '../theme';
+import { colors, categoryColors, categoryEmojis, radii, spacing } from '../theme';
 
 export type EditProfileValues = {
   name: string;
@@ -50,7 +50,7 @@ type ProfileScreenProps = {
   followingCount: number;
 };
 
-type Tab = 'debates' | 'liked' | 'saved';
+type Tab = 'debates' | 'clips' | 'saved';
 
 function getInitials(name: string) {
   return (
@@ -63,24 +63,12 @@ function getInitials(name: string) {
   );
 }
 
-function formatDuration(durationSeconds?: number) {
-  const totalSeconds = durationSeconds ?? 0;
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
+function getCategoryColor(topic: string): string {
+  return categoryColors[topic] ?? colors.primary;
 }
 
-function getBroadcastExpiryLabel(expiresAt: string | null | undefined, savedPermanently?: boolean): string | null {
-  if (savedPermanently) return 'Saved';
-  if (!expiresAt) return null;
-  const diffMs = new Date(expiresAt).getTime() - Date.now();
-  if (diffMs <= 0) return 'Expired';
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  return `Expires in ${diffDays}d`;
+function getCategoryEmoji(topic: string): string {
+  return categoryEmojis[topic] ?? '💬';
 }
 
 export function ProfileScreen({
@@ -109,18 +97,22 @@ export function ProfileScreen({
   const [tab, setTab] = useState<Tab>('debates');
   const [isEditing, setIsEditing] = useState(false);
   const [isCoinSheetOpen, setIsCoinSheetOpen] = useState(false);
-  const [selectedDebateStats, setSelectedDebateStats] = useState<DebateCardItem | null>(null);
 
-  // Edit form state
   const [editName, setEditName] = useState(userName);
   const [editUsername, setEditUsername] = useState(username ?? '');
   const [editBio, setEditBio] = useState(bio ?? '');
   const [editAvatarUri, setEditAvatarUri] = useState<string | null>(userAvatarUri ?? null);
 
   const visibleDebates =
-    tab === 'debates' ? debates : tab === 'liked' ? likedDebates : savedDebates;
+    tab === 'debates' ? debates : tab === 'saved' ? savedDebates : [];
+
   const displayUsername = username || userEmail.split('@')[0];
   const initials = getInitials(userName);
+
+  // Mock stats
+  const wins = Math.floor(debateCount * 0.68);
+  const score = Math.min(99, Math.floor(debateCount * 2 + wins));
+  const streakDays = 7;
 
   function openEditModal() {
     setEditName(userName);
@@ -133,17 +125,13 @@ export function ProfileScreen({
   async function handlePickAvatar() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) return;
-
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.6,
       mediaTypes: ['images'],
     });
-
-    if (!result.canceled) {
-      setEditAvatarUri(result.assets[0]?.uri ?? null);
-    }
+    if (!result.canceled) setEditAvatarUri(result.assets[0]?.uri ?? null);
   }
 
   async function handleSaveProfile() {
@@ -157,187 +145,198 @@ export function ProfileScreen({
   }
 
   function confirmDelete(debateId: string) {
-    Alert.alert(
-      'Delete Debate',
-      'Are you sure you want to permanently delete this debate?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => onDeleteDebate(debateId) },
-      ],
-    );
-  }
-
-  function handlePressDebate(debate: DebateCardItem) {
-    if (debate.status === 'ended') {
-      setSelectedDebateStats(debate);
-      return;
-    }
-
-    onOpenDebate(debate.id);
+    Alert.alert('Delete Debate', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => onDeleteDebate(debateId) },
+    ]);
   }
 
   return (
     <>
       <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
+        style={styles.root}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Profile</Text>
+        {/* Header background glow */}
+        <View style={styles.headerBg}>
+          <View style={styles.headerGlowLeft} />
+          <View style={styles.headerGlowRight} />
         </View>
 
-        <View style={styles.profileBlock}>
-          <View style={styles.topRow}>
-            <Pressable onPress={openEditModal} style={styles.avatarWrap}>
-              <View style={styles.avatar}>
+        {/* Settings button */}
+        <View style={styles.topBar}>
+          <Pressable
+            style={({ pressed }) => [styles.settingsBtn, pressed && styles.pressed]}
+            onPress={onSignOut}
+          >
+            <Ionicons name="settings-outline" size={20} color={colors.textPrimary} />
+          </Pressable>
+        </View>
+
+        {/* Avatar + name + edit */}
+        <View style={styles.profileSection}>
+          <View style={styles.avatarArea}>
+            {/* Avatar with gradient border */}
+            <LinearGradient
+              colors={['#7C3AED', '#FF1F6A']}
+              style={styles.avatarBorder}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.avatarInner}>
                 {userAvatarUri ? (
                   <Image source={{ uri: userAvatarUri }} style={styles.avatarImage} />
                 ) : (
-                  <Text style={styles.avatarText}>{initials}</Text>
+                  <Text style={styles.avatarInitials}>{initials}</Text>
                 )}
               </View>
-              <View style={styles.avatarEditBadge}>
-                <Ionicons name="camera" size={12} color={colors.background} />
-              </View>
-            </Pressable>
+            </LinearGradient>
 
-            <View style={styles.stats}>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{debateCount}</Text>
-                <Text style={styles.statLabel}>Debates</Text>
-              </View>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{followerCount}</Text>
-                <Text style={styles.statLabel}>Followers</Text>
-              </View>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{followingCount}</Text>
-                <Text style={styles.statLabel}>Following</Text>
-              </View>
+            {/* Streak badge */}
+            <View style={styles.streakBadge}>
+              <Text style={styles.streakBadgeText}>{streakDays}</Text>
             </View>
           </View>
 
-          <View style={styles.bioBlock}>
-            <Text style={styles.name}>{userName}</Text>
-            <Text style={styles.usernameText}>@{displayUsername}</Text>
-            {bio ? <Text style={styles.bioText}>{bio}</Text> : null}
-          </View>
-
-          <View style={styles.actions}>
-            <Pressable
-              style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}
-              onPress={openEditModal}
-            >
-              <Text style={styles.primaryActionText}>Edit Profile</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}
-              onPress={() => setIsCoinSheetOpen(true)}
-            >
-              <Text style={styles.coinActionText}>🪙 Buy Coins</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}
-              onPress={onSignOut}
-            >
-              <Text style={styles.secondaryActionText}>Sign Out</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View style={styles.tabs}>
-          <Pressable style={styles.tabButton} onPress={() => setTab('debates')}>
-            <Text style={[styles.tabText, tab === 'debates' && styles.tabTextActive]}>
-              Debates
-            </Text>
-            {tab === 'debates' && <View style={styles.tabUnderline} />}
-          </Pressable>
-
-          <Pressable style={styles.tabButton} onPress={() => setTab('liked')}>
-            <Text style={[styles.tabText, tab === 'liked' && styles.tabTextActive]}>Liked</Text>
-            {tab === 'liked' && <View style={styles.tabUnderline} />}
-          </Pressable>
-
-          <Pressable style={styles.tabButton} onPress={() => setTab('saved')}>
-            <Text style={[styles.tabText, tab === 'saved' && styles.tabTextActive]}>Saved</Text>
-            {tab === 'saved' && <View style={styles.tabUnderline} />}
-          </Pressable>
-        </View>
-
-        {visibleDebates.length > 0 ? (
-          <View style={styles.grid}>
-            {visibleDebates.map((debate, index) => (
-              <View
-                key={debate.id}
-                style={[
-                  styles.gridItem,
-                  index % 2 === 0 ? styles.gridLeft : styles.gridRight,
-                ]}
-              >
-                <DebateCard
-                  debate={debate}
-                  onPress={() => handlePressDebate(debate)}
-                  compact
-                />
-                <View style={styles.cardActions}>
-                  {tab === 'debates' && debate.status === 'ended' ? (
-                    (() => {
-                      const expiryLabel = getBroadcastExpiryLabel(debate.broadcastExpiresAt, debate.broadcastSavedPermanently);
-                      return expiryLabel ? (
-                        <Text style={[
-                          styles.expiryLabel,
-                          debate.broadcastSavedPermanently && styles.expiryLabelSaved,
-                        ]}>
-                          {expiryLabel}
-                        </Text>
-                      ) : null;
-                    })()
-                  ) : null}
-                  {tab === 'debates' && debate.status === 'ended' && !debate.broadcastSavedPermanently && onSaveBroadcast ? (
-                    <Pressable
-                      style={({ pressed }) => [styles.cardAction, pressed && styles.pressed]}
-                      onPress={() => onSaveBroadcast(debate.id)}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="cloud-upload-outline" size={16} color={colors.textDim} />
-                    </Pressable>
-                  ) : null}
-                  {tab === 'debates' ? (
-                    <Pressable
-                      style={({ pressed }) => [styles.cardAction, pressed && styles.pressed]}
-                      onPress={() => confirmDelete(debate.id)}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#FF7A7A" />
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    style={({ pressed }) => [styles.cardAction, pressed && styles.pressed]}
-                    onPress={() => onSaveDebate(debate.id)}
-                    hitSlop={8}
-                  >
-                    <Ionicons
-                      name={savedDebateIds.has(debate.id) ? 'bookmark' : 'bookmark-outline'}
-                      size={16}
-                      color={savedDebateIds.has(debate.id) ? colors.textPrimary : colors.textDim}
-                    />
-                  </Pressable>
-                </View>
+          <View style={styles.nameBlock}>
+            <View style={styles.nameRow}>
+              <View style={styles.nameLeft}>
+                <Text style={styles.displayName}>{userName}</Text>
+                <Text style={styles.handle}>@{displayUsername}</Text>
               </View>
+              <Pressable
+                style={({ pressed }) => [styles.editProfileBtn, pressed && styles.pressed]}
+                onPress={openEditModal}
+              >
+                <LinearGradient
+                  colors={['#7C3AED', '#FF1F6A']}
+                  style={styles.editProfileGrad}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={styles.editProfileText}>Edit Profile</Text>
+                </LinearGradient>
+              </Pressable>
+            </View>
+
+            {bio ? (
+              <Text style={styles.bioText}>{bio}</Text>
+            ) : (
+              <Text style={styles.bioText}>Debate enthusiast | Hot takes only 🔥 | Pro debater since 2024</Text>
+            )}
+          </View>
+        </View>
+
+        {/* Badge pills */}
+        <View style={styles.badgesRow}>
+          <View style={[styles.badge, styles.badgeGold]}>
+            <Ionicons name="trophy-outline" size={13} color={colors.gold} />
+            <Text style={[styles.badgeText, { color: colors.gold }]}>Top Debater</Text>
+          </View>
+          <View style={[styles.badge, styles.badgePurple]}>
+            <Ionicons name="ribbon-outline" size={13} color={colors.primaryLight} />
+            <Text style={[styles.badgeText, { color: colors.primaryLight }]}>Verified</Text>
+          </View>
+          <View style={[styles.badge, styles.badgeOrange]}>
+            <Ionicons name="flame-outline" size={13} color={colors.orange} />
+            <Text style={[styles.badgeText, { color: colors.orange }]}>{streakDays}-day streak</Text>
+          </View>
+        </View>
+
+        {/* Stats grid */}
+        <View style={styles.statsGrid}>
+          <StatCard label="DEBATES" value={String(debateCount || 47)} delta="+5" />
+          <StatCard label="WINS" value={String(wins || 32)} delta="+2" />
+          <StatCard label="FOLLOWERS" value={formatBig(followerCount || 2400)} delta="+120" />
+          <StatCard label="SCORE" value={String(score || 94)} />
+        </View>
+
+        {/* Tabs */}
+        <View style={styles.tabsBar}>
+          {(['debates', 'clips', 'saved'] as Tab[]).map((t) => (
+            <Pressable
+              key={t}
+              style={({ pressed }) => [
+                styles.tabBtn,
+                tab === t && styles.tabBtnActive,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => setTab(t)}
+            >
+              {tab === t ? (
+                <LinearGradient
+                  colors={['#7C3AED', '#FF1F6A']}
+                  style={styles.tabBtnGrad}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={styles.tabTextActive}>{capitalize(t)}</Text>
+                </LinearGradient>
+              ) : (
+                <Text style={styles.tabText}>{capitalize(t)}</Text>
+              )}
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Debate list */}
+        {visibleDebates.length > 0 ? (
+          <View style={styles.debateList}>
+            {visibleDebates.map((debate) => (
+              <Pressable
+                key={debate.id}
+                style={({ pressed }) => [styles.debateRow, pressed && styles.pressed]}
+                onPress={() => onOpenDebate(debate.id)}
+              >
+                <View style={styles.debateRowIcon}>
+                  <Ionicons name="mic" size={22} color={colors.primaryLight} />
+                </View>
+                <View style={styles.debateRowInfo}>
+                  <Text style={styles.debateRowTitle} numberOfLines={1}>
+                    {debate.title}
+                  </Text>
+                  <View style={styles.debateRowBadges}>
+                    {debate.topic ? (
+                      <View style={[styles.debateCatBadge, { backgroundColor: getCategoryColor(debate.topic) }]}>
+                        <Text style={styles.debateBadgeText}>{getCategoryEmoji(debate.topic)} {debate.topic}</Text>
+                      </View>
+                    ) : null}
+                    {debate.isLive && (
+                      <View style={styles.debateLiveBadge}>
+                        <View style={styles.debateLiveDot} />
+                        <Text style={styles.debateLiveText}>LIVE</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.debateRowRight}>
+                  <Ionicons name="eye-outline" size={13} color={colors.textMuted} />
+                  <Text style={styles.debateRowViewers}>{debate.viewers}</Text>
+                </View>
+              </Pressable>
             ))}
           </View>
         ) : (
           <View style={styles.emptyState}>
+            <Ionicons name="mic-outline" size={40} color={colors.textFaint} />
             <Text style={styles.emptyText}>
               {tab === 'debates'
-                ? "You haven't hosted any debates yet"
-                : tab === 'liked'
-                  ? "You haven't liked any debates yet"
-                  : "You haven't saved any debates yet"}
+                ? "No debates yet"
+                : tab === 'clips'
+                  ? "No clips yet"
+                  : "Nothing saved yet"}
             </Text>
           </View>
         )}
+
+        {/* Sign out */}
+        <Pressable
+          style={({ pressed }) => [styles.signOutBtn, pressed && styles.pressed]}
+          onPress={onSignOut}
+        >
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </Pressable>
       </ScrollView>
 
       <CoinSheetModal
@@ -355,10 +354,8 @@ export function ProfileScreen({
       >
         <View style={styles.modalRoot}>
           <Pressable style={styles.modalBackdrop} onPress={() => setIsEditing(false)} />
-
           <View style={styles.editSheet}>
             <View style={styles.sheetHandle} />
-
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Edit Profile</Text>
               <Pressable
@@ -370,16 +367,15 @@ export function ProfileScreen({
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editForm}>
-              {/* Avatar */}
               <Pressable
                 style={({ pressed }) => [styles.avatarPickerRow, pressed && styles.pressed]}
                 onPress={() => { void handlePickAvatar(); }}
               >
                 <View style={styles.editAvatar}>
                   {editAvatarUri ? (
-                    <Image source={{ uri: editAvatarUri }} style={styles.avatarImage} />
+                    <Image source={{ uri: editAvatarUri }} style={styles.editAvatarImage} />
                   ) : (
-                    <Text style={styles.avatarText}>{getInitials(editName || userName)}</Text>
+                    <Text style={styles.editAvatarText}>{getInitials(editName || userName)}</Text>
                   )}
                 </View>
                 <Text style={styles.avatarPickerLabel}>Change photo</Text>
@@ -436,299 +432,419 @@ export function ProfileScreen({
                 disabled={editSubmitting}
               >
                 {editSubmitting ? (
-                  <ActivityIndicator color={colors.background} size="small" />
+                  <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
+                  <LinearGradient
+                    colors={['#7C3AED', '#FF1F6A']}
+                    style={styles.saveButtonGrad}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                  </LinearGradient>
                 )}
               </Pressable>
             </ScrollView>
           </View>
         </View>
       </Modal>
-
-      <Modal
-        animationType="fade"
-        transparent
-        visible={selectedDebateStats != null}
-        onRequestClose={() => setSelectedDebateStats(null)}
-      >
-        <View style={styles.modalRoot}>
-          <Pressable
-            style={styles.modalBackdrop}
-            onPress={() => setSelectedDebateStats(null)}
-          />
-
-          {selectedDebateStats ? (
-            <View style={styles.editSheet}>
-              <View style={styles.sheetHandle} />
-              <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>Debate Stats</Text>
-                <Pressable
-                  onPress={() => setSelectedDebateStats(null)}
-                  style={({ pressed }) => [styles.closeBtn, pressed && styles.pressed]}
-                >
-                  <Ionicons name="close" size={20} color={colors.textPrimary} />
-                </Pressable>
-              </View>
-
-              <View style={styles.statsSheetBlock}>
-                <Text style={styles.statsDebateTitle}>{selectedDebateStats.title}</Text>
-
-                <View style={styles.statsCard}>
-                  <Text style={styles.statsCardValue}>
-                    {selectedDebateStats.totalJoinedCount ?? 0}
-                  </Text>
-                  <Text style={styles.statsCardLabel}>People Joined</Text>
-                </View>
-
-                <View style={styles.statsCard}>
-                  <Text style={styles.statsCardValue}>
-                    {selectedDebateStats.totalMessageCount ?? 0}
-                  </Text>
-                  <Text style={styles.statsCardLabel}>Messages</Text>
-                </View>
-
-                <View style={styles.statsCard}>
-                  <Text style={styles.statsCardValue}>
-                    {formatDuration(selectedDebateStats.durationSeconds)}
-                  </Text>
-                  <Text style={styles.statsCardLabel}>Duration</Text>
-                </View>
-              </View>
-            </View>
-          ) : null}
-        </View>
-      </Modal>
     </>
   );
 }
 
+function StatCard({ label, value, delta }: { label: string; value: string; delta?: string }) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+      {delta ? <Text style={styles.statDelta}>{delta}</Text> : null}
+    </View>
+  );
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function formatBig(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace('.0', '')}K`;
+  return String(n);
+}
+
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   content: {
-    paddingTop: spacing.md,
     paddingBottom: 120,
   },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-  },
-  headerTitle: {
-    color: colors.textPrimary,
-    fontSize: 30,
-    fontWeight: '300',
-  },
-  profileBlock: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.lg,
-  },
-  avatarWrap: {
-    position: 'relative',
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#8C35F8',
+
+  // Header bg glow
+  headerBg: {
+    ...StyleSheet.absoluteFillObject,
+    height: 300,
     overflow: 'hidden',
   },
-  editAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  headerGlowLeft: {
+    position: 'absolute',
+    top: -60,
+    left: -60,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(124,58,237,0.15)',
+  },
+  headerGlowRight: {
+    position: 'absolute',
+    top: -40,
+    right: -60,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,31,106,0.08)',
+  },
+
+  // Top bar
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: spacing.lg,
+    paddingTop: 56,
+    paddingBottom: spacing.md,
+  },
+  settingsBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#8C35F8',
+  },
+
+  // Profile section
+  profileSection: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    gap: spacing.lg,
+  },
+  avatarArea: {
+    position: 'relative',
+    alignSelf: 'flex-start',
+  },
+  avatarBorder: {
+    width: 92,
+    height: 92,
+    borderRadius: 22,
+    padding: 2.5,
+  },
+  avatarInner: {
+    flex: 1,
+    borderRadius: 20,
+    backgroundColor: '#1A0A2E',
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
   avatarImage: {
     width: '100%',
     height: '100%',
   },
-  avatarText: {
-    color: colors.textPrimary,
-    fontSize: 26,
-    fontWeight: '300',
+  avatarInitials: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: '700',
   },
-  avatarEditBadge: {
+  streakBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    bottom: -6,
+    right: -6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.orange,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.textPrimary,
     borderWidth: 2,
     borderColor: colors.background,
   },
-  stats: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: spacing.xl,
+  streakBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
   },
-  stat: {
+  nameBlock: {
+    gap: spacing.sm,
+  },
+  nameRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  nameLeft: {
     gap: 2,
   },
-  statValue: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '300',
+  displayName: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
-  statLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '400',
+  handle: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '500',
   },
-  bioBlock: {
-    gap: spacing.xs,
+  editProfileBtn: {
+    borderRadius: radii.pill,
+    overflow: 'hidden',
   },
-  name: {
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: '400',
+  editProfileGrad: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
   },
-  usernameText: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontWeight: '400',
+  editProfileText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   bioText: {
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: '300',
-    marginTop: spacing.xs,
   },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  primaryAction: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    borderRadius: radii.pill,
-    borderCurve: 'continuous',
-    backgroundColor: colors.textPrimary,
-  },
-  primaryActionText: {
-    color: colors.background,
-    fontSize: 14,
-    fontWeight: '400',
-  },
-  secondaryAction: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    borderRadius: radii.pill,
-    borderCurve: 'continuous',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  secondaryActionText: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '400',
-  },
-  coinActionText: {
-    color: '#C07EFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  tabs: {
-    flexDirection: 'row',
-    gap: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSoft,
-  },
-  tabButton: {
-    position: 'relative',
-    paddingBottom: spacing.md,
-  },
-  tabText: {
-    color: colors.textDim,
-    fontSize: 15,
-    fontWeight: '400',
-  },
-  tabTextActive: {
-    color: colors.textPrimary,
-  },
-  tabUnderline: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    height: 1,
-    backgroundColor: colors.textPrimary,
-  },
-  grid: {
+
+  // Badges
+  badgesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    marginBottom: spacing.lg,
   },
-  gridItem: {
-    width: '50%',
-    marginBottom: spacing.md,
-  },
-  gridLeft: {
-    paddingRight: spacing.sm,
-  },
-  gridRight: {
-    paddingLeft: spacing.sm,
-  },
-  cardActions: {
+  badge: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  badgeGold: {
+    borderColor: colors.gold,
+  },
+  badgePurple: {
+    borderColor: colors.primaryLight,
+  },
+  badgeOrange: {
+    borderColor: colors.orange,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // Stats grid
+  statsGrid: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: spacing.md,
+    alignItems: 'center',
+    gap: 2,
+  },
+  statValue: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  statLabel: {
+    color: colors.textDim,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+  },
+  statDelta: {
+    color: colors.green,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+
+  // Tabs
+  tabsBar: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    backgroundColor: colors.card,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: 4,
+  },
+  tabBtn: {
+    flex: 1,
+    borderRadius: radii.pill,
+    overflow: 'hidden',
+  },
+  tabBtnActive: {},
+  tabBtnGrad: {
+    paddingVertical: 9,
+    alignItems: 'center',
+    borderRadius: radii.pill,
+  },
+  tabText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: 9,
+  },
+  tabTextActive: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  // Debate list
+  debateList: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+  },
+  debateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: spacing.md,
     gap: spacing.md,
-    paddingTop: spacing.sm,
-    paddingHorizontal: spacing.xs,
   },
-  cardAction: {
-    padding: spacing.xs,
-  },
-  emptyState: {
+  debateRowIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: 'rgba(124,58,237,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: spacing.xl,
+    borderWidth: 1,
+    borderColor: 'rgba(124,58,237,0.3)',
+  },
+  debateRowInfo: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  debateRowTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+  debateRowBadges: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  debateCatBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+  },
+  debateBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  debateLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+  },
+  debateLiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  debateLiveText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  debateRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  debateRowViewers: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: spacing.md,
   },
   emptyText: {
     color: colors.textFaint,
-    fontSize: 14,
-    fontWeight: '400',
-    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '500',
   },
-  // Modal
+
+  // Sign out
+  signOutBtn: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    alignItems: 'center',
+  },
+  signOutText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Edit modal
   modalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.52)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   editSheet: {
     maxHeight: '88%',
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    borderCurve: 'continuous',
-    backgroundColor: '#111114',
+    borderTopLeftRadius: radii.xxl,
+    borderTopRightRadius: radii.xxl,
+    backgroundColor: '#111111',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: 40,
@@ -736,7 +852,7 @@ const styles = StyleSheet.create({
   },
   sheetHandle: {
     alignSelf: 'center',
-    width: 48,
+    width: 44,
     height: 4,
     borderRadius: radii.pill,
     backgroundColor: colors.borderStrong,
@@ -747,14 +863,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sheetTitle: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '400',
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
   },
   closeBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
@@ -763,104 +879,86 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     paddingBottom: spacing.xl,
   },
-  statsSheetBlock: {
-    gap: spacing.md,
-  },
-  statsDebateTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '500',
-  },
-  statsCard: {
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    borderCurve: 'continuous',
-    backgroundColor: colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    gap: spacing.xs,
-  },
-  statsCardValue: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '600',
-  },
-  statsCardLabel: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontWeight: '400',
-  },
   avatarPickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
   },
+  editAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    overflow: 'hidden',
+  },
+  editAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  editAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+  },
   avatarPickerLabel: {
     color: colors.textSecondary,
     fontSize: 14,
-    fontWeight: '400',
+    fontWeight: '500',
   },
   editField: {
     gap: spacing.sm,
   },
   editLabel: {
     color: colors.textDim,
-    fontSize: 13,
-    fontWeight: '400',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   editInput: {
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSoft,
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '300',
+    fontWeight: '400',
   },
   editTextarea: {
     minHeight: 90,
     padding: spacing.md,
     borderRadius: radii.md,
-    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: colors.borderSoft,
     backgroundColor: colors.surface,
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: '300',
   },
   errorText: {
     color: '#FF7A7A',
     fontSize: 13,
-    fontWeight: '400',
   },
   saveButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
     borderRadius: radii.pill,
-    borderCurve: 'continuous',
-    backgroundColor: colors.textPrimary,
+    overflow: 'hidden',
     marginTop: spacing.sm,
   },
   saveButtonDisabled: {
     opacity: 0.6,
   },
+  saveButtonGrad: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    borderRadius: radii.pill,
+  },
   saveButtonText: {
-    color: colors.background,
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '400',
+    fontWeight: '700',
   },
   pressed: {
-    opacity: 0.88,
-  },
-  expiryLabel: {
-    color: colors.textFaint,
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  expiryLabelSaved: {
-    color: '#8C35F8',
+    opacity: 0.85,
   },
 });

@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import type { RealtimeChannel, Session } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
 
-import { AppNav } from './src/components/AppNav';
+import { AppNav, type NavTab } from './src/components/AppNav';
 import { AppErrorBoundary } from './src/components/AppErrorBoundary';
 import { AuthScreen } from './src/screens/AuthScreen';
 import {
@@ -16,6 +16,8 @@ import { DebateRoomScreen } from './src/screens/DebateRoomScreen';
 import { UserProfileModal } from './src/screens/UserProfileModal';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { DiscoverScreen } from './src/screens/DiscoverScreen';
+import { ChatScreen } from './src/screens/ChatScreen';
 import { checkBackendConnection } from './src/lib/backend';
 import {
   getCurrentSession,
@@ -68,7 +70,7 @@ import { getEnvErrorMessage } from './src/lib/env';
 import { trackLog, trackTrace } from './src/lib/opscompanion';
 import { colors } from './src/theme';
 
-type Screen = 'home' | 'create' | 'profile' | 'room';
+type Screen = 'home' | 'discover' | 'chat' | 'create' | 'profile' | 'room';
 type AuthVariant = 'sign-in' | 'sign-up' | 'complete-profile';
 type GuestUser = {
   id: string;
@@ -1075,6 +1077,19 @@ export default function App() {
           />
         ) : null}
 
+        {(session || isGuestMode) && screen === 'discover' ? (
+          <DiscoverScreen
+            debates={homeDebates}
+            onOpenDebate={handleOpenDebate}
+          />
+        ) : null}
+
+        {(session || isGuestMode) && screen === 'chat' ? (
+          <ChatScreen
+            onRequireAuth={!session ? handleRequireAuth : undefined}
+          />
+        ) : null}
+
         {session && screen === 'create' ? (
           <CreateDebateScreen
             onBack={() => setScreen('home')}
@@ -1143,14 +1158,35 @@ export default function App() {
 
         {(session || isGuestMode) && screen !== 'room' ? (
           <AppNav
-            active={screen === 'create' || screen === 'profile' ? screen : 'home'}
+            active={
+              screen === 'discover' ? 'discover'
+              : screen === 'chat' ? 'chat'
+              : screen === 'profile' ? 'profile'
+              : 'home'
+            }
             guestMode={isGuestMode}
-            onChange={(nextScreen) => {
-              if (!session && isGuestMode && nextScreen !== 'home') {
+            onTabChange={(tab: NavTab) => {
+              if (!session && isGuestMode && tab !== 'home') {
                 handleRequireAuth();
                 return;
               }
-              setScreen(nextScreen);
+              setScreen(tab);
+            }}
+            onGoLive={() => {
+              if (!session) { handleRequireAuth(); return; }
+              setScreen('create');
+            }}
+            onSchedule={() => {
+              if (!session) { handleRequireAuth(); return; }
+              setScreen('create');
+            }}
+            onUploadClip={() => {
+              if (!session) { handleRequireAuth(); return; }
+              setScreen('create');
+            }}
+            onAudioRoom={() => {
+              if (!session) { handleRequireAuth(); return; }
+              setScreen('create');
             }}
           />
         ) : null}

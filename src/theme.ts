@@ -1,20 +1,84 @@
 export const colors = {
-  background: '#000000',
-  nav: 'rgba(0, 0, 0, 0.88)',
-  surface: 'rgba(255, 255, 255, 0.02)',
-  surfacePressed: 'rgba(255, 255, 255, 0.04)',
-  surfaceRaised: 'rgba(255, 255, 255, 0.06)',
+  // Backgrounds
+  background: '#070707',
+  card: '#111111',
+  cardAlt: '#0D0D0D',
+  surface: 'rgba(255,255,255,0.05)',
+  surfaceRaised: 'rgba(255,255,255,0.08)',
+  surfacePressed: 'rgba(255,255,255,0.04)',
+
+  // Brand
+  primary: '#7C3AED',
+  primaryLight: '#9D6BFF',
+  accent: '#FF1F6A',
+  orange: '#F97316',
+  green: '#22C55E',
+  gold: '#F59E0B',
+  blue: '#3B82F6',
+  teal: '#14B8A6',
+
+  // Text
   textPrimary: '#FFFFFF',
-  textSecondary: 'rgba(255, 255, 255, 0.76)',
-  textMuted: 'rgba(255, 255, 255, 0.68)',
-  textDim: 'rgba(255, 255, 255, 0.42)',
-  textFaint: 'rgba(255, 255, 255, 0.24)',
-  borderSoft: 'rgba(255, 255, 255, 0.08)',
-  borderStrong: 'rgba(255, 255, 255, 0.22)',
-  overlayStrong: 'rgba(0, 0, 0, 0.48)',
-  borderOverlay: 'rgba(255, 255, 255, 0.12)',
-  avatar: 'rgba(255, 255, 255, 0.10)',
+  textSecondary: 'rgba(255,255,255,0.72)',
+  textMuted: 'rgba(255,255,255,0.48)',
+  textDim: 'rgba(255,255,255,0.36)',
+  textFaint: 'rgba(255,255,255,0.2)',
+
+  // Borders
+  borderSoft: 'rgba(255,255,255,0.06)',
+  borderMed: 'rgba(255,255,255,0.10)',
+  borderStrong: 'rgba(255,255,255,0.18)',
+
+  // Overlays
+  nav: 'rgba(7,7,7,0.94)',
+  overlayStrong: 'rgba(0,0,0,0.72)',
+  overlayMed: 'rgba(0,0,0,0.48)',
+
+  // Legacy aliases for compatibility
+  borderOverlay: 'rgba(255,255,255,0.12)',
+  avatar: 'rgba(255,255,255,0.10)',
 } as const;
+
+// Category color map
+export const categoryColors: Record<string, string> = {
+  Tech: '#3B82F6',
+  Technology: '#3B82F6',
+  Sports: '#22C55E',
+  'Hip-Hop': '#F97316',
+  HipHop: '#F97316',
+  Politics: '#3B82F6',
+  Culture: '#F97316',
+  Relationships: '#EC4899',
+  Gaming: '#7C3AED',
+  Finance: '#22C55E',
+  Science: '#14B8A6',
+  Business: '#22C55E',
+  Entertainment: '#F97316',
+  Anime: '#EC4899',
+  Health: '#22C55E',
+  Policy: '#3B82F6',
+  Media: '#9D6BFF',
+  Environment: '#22C55E',
+};
+
+export const categoryEmojis: Record<string, string> = {
+  Tech: '💻',
+  Technology: '💻',
+  Sports: '⚽',
+  'Hip-Hop': '🎤',
+  HipHop: '🎤',
+  Politics: '🏛️',
+  Culture: '🌍',
+  Relationships: '💕',
+  Gaming: '🎮',
+  Finance: '📈',
+  Science: '🔬',
+  Business: '💼',
+  Entertainment: '🎬',
+  Anime: '🎌',
+  Health: '🏥',
+  AI: '🤖',
+};
 
 export const spacing = {
   xs: 6,
@@ -27,9 +91,11 @@ export const spacing = {
 } as const;
 
 export const radii = {
+  sm: 10,
   md: 16,
-  lg: 24,
-  xl: 36,
+  lg: 20,
+  xl: 24,
+  xxl: 32,
   pill: 999,
 } as const;
 

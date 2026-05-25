@@ -1,34 +1,95 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-
-const CATEGORIES = [
-  'All',
-  'Featured',
-  'Most Popular',
-  'Politics',
-  'Sports',
-  'Science',
-  'Technology',
-  'Anime',
-  'Entertainment',
-  'Business',
-  'Health',
-  'Gaming',
-];
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import { DebateCard } from '../components/DebateCard';
-import { DebateCardItem } from '../data/mockDebates';
-import { colors, radii, spacing } from '../theme';
+import { FeedDebateCard, type FeedDebateCardData } from '../components/FeedDebateCard';
+import type { DebateCardItem } from '../data/mockDebates';
+import { colors, categoryColors, categoryEmojis, radii, spacing } from '../theme';
+
+// Trending now topics
+const TRENDING_TOPICS = [
+  { emoji: '🤖', label: 'AI vs Jobs', hot: true },
+  { emoji: '🏀', label: 'NBA Finals' },
+  { emoji: '₿', label: 'Crypto Crash' },
+  { emoji: '🗳️', label: 'Election 2026' },
+  { emoji: '🎤', label: 'Rap Beef' },
+];
+
+// Categories
+const CATEGORIES = [
+  { id: 'foryou', label: 'For You', emoji: '✨', gradient: true },
+  { id: 'politics', label: 'Politics', emoji: '🏛️' },
+  { id: 'sports', label: 'Sports', emoji: '⚽' },
+  { id: 'hiphop', label: 'Hip-Hop', emoji: '🎤' },
+  { id: 'tech', label: 'Tech', emoji: '💻' },
+  { id: 'relationships', label: 'Relationships', emoji: '💕' },
+  { id: 'gaming', label: 'Gaming', emoji: '🎮' },
+  { id: 'culture', label: 'Culture', emoji: '🌍' },
+  { id: 'finance', label: 'Finance', emoji: '📈' },
+];
+
+// Mock data to enrich debate cards with feed-specific fields
+function enrichDebate(d: DebateCardItem, index: number): FeedDebateCardData {
+  const mockData: Partial<FeedDebateCardData>[] = [
+    {
+      debaterCount: 4,
+      debaterAvatars: ['A', 'B', 'C', 'D'],
+      tags: ['AI', 'jobs', 'future'],
+      reactions: { fire: 342, mind: 128, clap: 89, thumbsDown: 201 },
+      trending: true,
+      commentCount: 91,
+      heatLevel: 0.82,
+    },
+    {
+      debaterCount: 3,
+      debaterAvatars: ['A', 'B', 'C'],
+      tags: ['NBA', 'LeBron', 'Jordan'],
+      reactions: { fire: 567, mind: 43, clap: 312, thumbsDown: 445 },
+      trending: true,
+      commentCount: 268,
+      heatLevel: 0.75,
+    },
+    {
+      debaterCount: 5,
+      debaterAvatars: ['A', 'B', 'C', 'D', 'E'],
+      tags: ['Drake', 'Kendrick', 'beef'],
+      reactions: { fire: 890, mind: 234, clap: 156, thumbsDown: 678 },
+      trending: true,
+      commentCount: 98,
+      heatLevel: 0.95,
+    },
+    {
+      debaterCount: 4,
+      debaterAvatars: ['A', 'B', 'C', 'D'],
+      tags: ['dating', 'tinder', 'love'],
+      reactions: { fire: 0, mind: 0, clap: 0, thumbsDown: 0 },
+      trending: false,
+      commentCount: 326,
+      heatLevel: 0.6,
+    },
+    {
+      debaterCount: 6,
+      debaterAvatars: ['A', 'B', 'C', 'D', 'E', 'F'],
+      tags: ['democracy', 'politics', 'elections'],
+      reactions: { fire: 423, mind: 312, clap: 189, thumbsDown: 534 },
+      trending: true,
+      commentCount: 220,
+      heatLevel: 0.88,
+    },
+  ];
+
+  return {
+    ...d,
+    ...(mockData[index % mockData.length] ?? {}),
+  };
+}
 
 type HomeScreenProps = {
   debates: DebateCardItem[];
@@ -40,8 +101,6 @@ type HomeScreenProps = {
   onViewProfile?: (userId: string, userName: string) => void;
 };
 
-type Tab = 'live' | 'upcoming';
-
 export function HomeScreen({
   debates,
   errorMessage,
@@ -49,316 +108,467 @@ export function HomeScreen({
   currentUserId,
   onOpenDebate,
   onStartScheduled,
-  onViewProfile,
 }: HomeScreenProps) {
-  const [tab, setTab] = useState<Tab>('live');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState('foryou');
 
-  const q = searchQuery.trim().toLowerCase();
-
-  const visibleDebates = debates
-    .filter((debate) => (tab === 'live' ? debate.isLive : !debate.isLive))
-    .filter((debate) => {
-      if (!q) return true;
-      return (
-        debate.title.toLowerCase().includes(q) ||
-        (debate.topic ?? '').toLowerCase().includes(q) ||
-        debate.host.toLowerCase().includes(q)
-      );
-    })
-    .filter((debate) => {
-      if (selectedCategory === 'All' || selectedCategory === 'Featured') return true;
-      if (selectedCategory === 'Most Popular') return true;
-      const topic = (debate.topic ?? '').toLowerCase();
-      const title = debate.title.toLowerCase();
-      const cat = selectedCategory.toLowerCase();
-      return topic.includes(cat) || title.includes(cat);
-    });
+  const liveDebates = debates.filter((d) => d.isLive);
+  const feedDebates = debates.map((d, i) => enrichDebate(d, i));
 
   return (
     <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
+      style={styles.root}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
     >
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Podium</Text>
-        <Text style={styles.subtitle}>Live debates, real conversations</Text>
-      </View>
-
-      {/* Search bar */}
-      <View style={styles.searchRow}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={16} color={colors.textDim} />
-          <TextInput
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search debates, topics, hosts..."
-            placeholderTextColor={colors.textFaint}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-          />
-          {searchQuery.length > 0 ? (
-            <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={colors.textDim} />
-            </Pressable>
-          ) : null}
+        <View style={styles.headerLeft}>
+          <LinearGradient
+            colors={['#7C3AED', '#FF1F6A']}
+            style={styles.logoBox}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+          </LinearGradient>
+          <Text style={styles.logoText}>Podium</Text>
+          <View style={styles.livePill}>
+            <Text style={styles.livePillText}>LIVE</Text>
+          </View>
         </View>
+        <Pressable style={styles.bellBtn}>
+          <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
+          <View style={styles.bellDot} />
+        </Pressable>
       </View>
 
-      {/* Categories */}
+      {/* Trending Now */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.fireCircle}>
+            <Text style={styles.fireEmoji}>🔥</Text>
+          </View>
+          <Text style={styles.sectionTitle}>TRENDING NOW</Text>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.trendingRow}
+        >
+          {TRENDING_TOPICS.map((topic) => (
+            <Pressable
+              key={topic.label}
+              style={({ pressed }) => [styles.trendingChip, pressed && styles.pressed]}
+            >
+              <Text style={styles.trendingChipText}>
+                {topic.emoji} {topic.label}{topic.hot ? ' ⚡' : ''}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Live Now */}
+      <View style={styles.section}>
+        <View style={styles.liveNowHeader}>
+          <View style={styles.liveNowLeft}>
+            <View style={styles.liveNowBadge}>
+              <View style={styles.liveNowDot} />
+              <Text style={styles.liveNowBadgeText}>LIVE</Text>
+            </View>
+            <Text style={styles.sectionTitle}>LIVE NOW</Text>
+          </View>
+          <Text style={styles.activeCount}>{liveDebates.length || 6} active</Text>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.liveNowRow}
+        >
+          {(liveDebates.length > 0 ? liveDebates : MOCK_LIVE_PREVIEWS).map((d, i) => (
+            <LivePreviewCard
+              key={d.id ?? i}
+              title={typeof d === 'string' ? d : (d as DebateCardItem).title}
+              viewers={typeof d === 'string' ? '0' : (d as DebateCardItem).viewers}
+              host={typeof d === 'string' ? 'Host' : (d as DebateCardItem).host}
+              onPress={() => {
+                if (typeof d !== 'string') onOpenDebate((d as DebateCardItem).id);
+              }}
+            />
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Category Tabs */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoriesRow}
       >
-        {CATEGORIES.map((cat) => (
-          <Pressable
-            key={cat}
-            style={({ pressed }) => [
-              styles.categoryPill,
-              selectedCategory === cat && styles.categoryPillActive,
-              pressed && styles.pressed,
-            ]}
-            onPress={() => setSelectedCategory(cat)}
-          >
-            <Text
-              style={[
-                styles.categoryPillText,
-                selectedCategory === cat && styles.categoryPillTextActive,
-              ]}
-            >
-              {cat}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      <View style={styles.tabs}>
-        <Pressable style={styles.tabButton} onPress={() => setTab('live')}>
-          <Text style={[styles.tabText, tab === 'live' && styles.tabTextActive]}>Live</Text>
-          {tab === 'live' && <View style={styles.tabUnderline} />}
-        </Pressable>
-
-        <Pressable style={styles.tabButton} onPress={() => setTab('upcoming')}>
-          <Text style={[styles.tabText, tab === 'upcoming' && styles.tabTextActive]}>Upcoming</Text>
-          {tab === 'upcoming' && <View style={styles.tabUnderline} />}
-        </Pressable>
-      </View>
-
-      <View style={styles.list}>
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-        {loading && visibleDebates.length === 0 ? (
-          <View style={styles.emptyState}>
-            <ActivityIndicator color={colors.textDim} size="small" />
-            <Text style={styles.emptyText}>
-              {tab === 'live' ? 'Loading live debates...' : 'Loading upcoming debates...'}
-            </Text>
-          </View>
-        ) : null}
-
-        {!loading && visibleDebates.length === 0 ? (
-          <View style={styles.emptyState}>
-            {q ? (
-              <>
-                <Ionicons name="search-outline" size={36} color={colors.textFaint} />
-                <Text style={styles.emptyText}>No debates match "{searchQuery}"</Text>
-              </>
-            ) : tab === 'live' ? (
-              <>
-                <Image
-                  source={require('../../mic.png')}
-                  style={styles.emptyImage}
-                  resizeMode="contain"
-                />
-                <Text style={styles.emptyText}>No live debates right now</Text>
-              </>
-            ) : (
-              <Text style={styles.emptyText}>No upcoming debates right now</Text>
-            )}
-          </View>
-        ) : null}
-
-        {visibleDebates.map((debate) => {
-          const isMyScheduled =
-            !debate.isLive && debate.hostId === currentUserId && onStartScheduled != null;
-
+        {CATEGORIES.map((cat) => {
+          const isActive = selectedCategory === cat.id;
           return (
-            <View key={debate.id}>
-              <DebateCard
-                debate={debate}
-                onPress={() => onOpenDebate(debate.id)}
-                onPressHost={
-                  debate.hostId && debate.hostId !== currentUserId && onViewProfile
-                    ? () => onViewProfile(debate.hostId!, debate.host)
-                    : undefined
-                }
-              />
-              {isMyScheduled ? (
-                <Pressable
-                  style={({ pressed }) => [styles.startNowButton, pressed && styles.pressed]}
-                  onPress={() => onStartScheduled(debate.id)}
+            <Pressable
+              key={cat.id}
+              style={({ pressed }) => [
+                styles.catPill,
+                !isActive && styles.catPillInactive,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => setSelectedCategory(cat.id)}
+            >
+              {isActive ? (
+                <LinearGradient
+                  colors={['#7C3AED', '#FF1F6A']}
+                  style={styles.catPillGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
                 >
-                  <Ionicons name="radio" size={16} color={colors.background} />
-                  <Text style={styles.startNowText}>Start Now</Text>
-                </Pressable>
-              ) : null}
-            </View>
+                  <Text style={styles.catPillText}>{cat.emoji} {cat.label}</Text>
+                </LinearGradient>
+              ) : (
+                <Text style={styles.catPillTextInactive}>{cat.emoji} {cat.label}</Text>
+              )}
+            </Pressable>
           );
         })}
+      </ScrollView>
+
+      {/* Feed */}
+      <View style={styles.feed}>
+        {errorMessage ? (
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        ) : null}
+
+        {feedDebates.length > 0 ? (
+          feedDebates.map((d, i) => (
+            <FeedDebateCard
+              key={d.id}
+              debate={d}
+              onPress={() => onOpenDebate(d.id)}
+            />
+          ))
+        ) : !loading ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="mic-outline" size={48} color={colors.textFaint} />
+            <Text style={styles.emptyText}>No debates right now</Text>
+            <Text style={styles.emptySubText}>Be the first to start one</Text>
+          </View>
+        ) : null}
       </View>
     </ScrollView>
   );
 }
 
+type LivePreviewCardProps = {
+  title: string;
+  viewers: string;
+  host: string;
+  onPress: () => void;
+};
+
+function LivePreviewCard({ title, viewers, host, onPress }: LivePreviewCardProps) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.livePreviewCard, pressed && styles.pressed]}
+      onPress={onPress}
+    >
+      <View style={styles.livePreviewBg}>
+        <View style={styles.livePreviewGlow} />
+      </View>
+      <View style={styles.livePreviewHostRow}>
+        <View style={styles.livePreviewAvatar}>
+          <Text style={styles.livePreviewAvatarText}>{host.charAt(0).toUpperCase()}</Text>
+        </View>
+      </View>
+      <Text style={styles.livePreviewTitle} numberOfLines={2}>{title}</Text>
+      <Text style={styles.livePreviewViewers}>{viewers} watching</Text>
+    </Pressable>
+  );
+}
+
+// Mock previews when no live debates
+const MOCK_LIVE_PREVIEWS = [
+  { id: 'm1', title: 'Is AI Going to Replace 90% of...', viewers: '12400', host: 'TechVision', isLive: true, hostAvatar: 'T', topic: 'Tech', isPublic: true },
+  { id: 'm2', title: 'LeBron vs Jordan: The REAL GOAT...', viewers: '8700', host: 'SportsKing', isLive: true, hostAvatar: 'S', topic: 'Sports', isPublic: true },
+  { id: 'm3', title: 'Drake vs Kendrick: Who Won the Beef', viewers: '15200', host: 'BarsTalk', isLive: true, hostAvatar: 'B', topic: 'Hip-Hop', isPublic: true },
+];
+
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   content: {
-    paddingTop: spacing.xl,
     paddingBottom: 120,
   },
+
+  // Header
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-    gap: spacing.xs,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 42,
-    fontWeight: '300',
-    letterSpacing: -1.2,
-  },
-  subtitle: {
-    color: colors.textDim,
-    fontSize: 14,
-    fontWeight: '400',
-  },
-  searchRow: {
-    paddingHorizontal: spacing.lg,
+    paddingTop: 60,
     paddingBottom: spacing.lg,
   },
-  searchBar: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
+  },
+  logoBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoText: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  livePill: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: radii.pill,
-    borderCurve: 'continuous',
+  },
+  livePillText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  bellBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.borderSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
-  searchInput: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '400',
-    padding: 0,
+  bellDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: colors.background,
   },
-  categoriesRow: {
+
+  // Sections
+  section: {
+    marginBottom: spacing.lg,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  fireCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.orange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fireEmoji: {
+    fontSize: 14,
+  },
+
+  // Trending
+  trendingRow: {
+    paddingHorizontal: spacing.lg,
     gap: spacing.sm,
     flexDirection: 'row',
   },
-  categoryPill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radii.pill,
-    borderCurve: 'continuous',
+  trendingChip: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.borderSoft,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
+    borderRadius: radii.pill,
   },
-  categoryPillActive: {
-    backgroundColor: '#8C35F8',
-    borderColor: '#8C35F8',
+  trendingChipText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
   },
-  categoryPillText: {
-    color: colors.textDim,
+
+  // Live Now
+  liveNowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  liveNowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  liveNowBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radii.pill,
+  },
+  liveNowDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  liveNowBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  activeCount: {
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: '500',
   },
-  categoryPillTextActive: {
-    color: colors.textPrimary,
-  },
-  tabs: {
-    flexDirection: 'row',
-    gap: spacing.xl,
+  liveNowRow: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSoft,
+    gap: spacing.md,
+    flexDirection: 'row',
   },
-  tabButton: {
-    position: 'relative',
-    paddingBottom: spacing.md,
+  livePreviewCard: {
+    width: 160,
+    borderRadius: radii.xl,
+    overflow: 'hidden',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.3)',
+    padding: spacing.md,
+    gap: spacing.sm,
   },
-  tabText: {
-    color: colors.textDim,
-    fontSize: 15,
-    fontWeight: '400',
+  livePreviewBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1A0A2E',
   },
-  tabTextActive: {
-    color: colors.textPrimary,
-  },
-  tabUnderline: {
+  livePreviewGlow: {
     position: 'absolute',
     right: 0,
     bottom: 0,
-    left: 0,
-    height: 1,
-    backgroundColor: colors.textPrimary,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(124,58,237,0.15)',
   },
-  list: {
-    paddingTop: spacing.lg,
+  livePreviewHostRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 60,
+  },
+  livePreviewAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  livePreviewAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  livePreviewTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  livePreviewViewers: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+
+  // Categories
+  categoriesRow: {
     paddingHorizontal: spacing.lg,
-    gap: spacing.md,
+    paddingBottom: spacing.lg,
+    gap: spacing.sm,
+    flexDirection: 'row',
+  },
+  catPill: {
+    borderRadius: radii.pill,
+    overflow: 'hidden',
+  },
+  catPillInactive: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
+  },
+  catPillGradient: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
+    borderRadius: radii.pill,
+  },
+  catPillText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  catPillTextInactive: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // Feed
+  feed: {
+    paddingHorizontal: spacing.lg,
   },
   emptyState: {
     alignItems: 'center',
-    justifyContent: 'center',
     paddingVertical: 80,
-    gap: spacing.lg,
-  },
-  emptyImage: {
-    width: 80,
-    height: 80,
-    opacity: 0.5,
+    gap: spacing.md,
   },
   emptyText: {
     color: colors.textFaint,
-    fontSize: 14,
-    fontWeight: '400',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptySubText: {
+    color: colors.textFaint,
+    fontSize: 13,
   },
   errorText: {
     color: '#FF7A7A',
     fontSize: 13,
-    fontWeight: '400',
-  },
-  startNowButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.pill,
-    borderCurve: 'continuous',
-    backgroundColor: '#F2387A',
-  },
-  startNowText: {
-    color: colors.background,
-    fontSize: 14,
-    fontWeight: '600',
+    paddingBottom: spacing.md,
   },
   pressed: {
-    opacity: 0.88,
+    opacity: 0.85,
   },
 });
