@@ -20,7 +20,6 @@ export type CreateDebateValues = {
   topic: string;
   description: string;
   isPublic: boolean;
-  factCheckEnabled: boolean;
   audienceCommentsEnabled: boolean;
   askToJoinEnabled: boolean;
   scheduledFor: string | null;
@@ -101,7 +100,6 @@ export function CreateDebateScreen({
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [launchMode, setLaunchMode] = useState<LaunchMode>('now');
   const [tools, setTools] = useState({
-    factCheck: true,
     audienceComments: true,
     askToJoin: true,
   });
@@ -152,7 +150,6 @@ export function CreateDebateScreen({
       topic: topic.trim(),
       description: description.trim(),
       isPublic,
-      factCheckEnabled: tools.factCheck,
       audienceCommentsEnabled: tools.audienceComments,
       askToJoinEnabled: tools.askToJoin,
       scheduledFor,
@@ -419,17 +416,6 @@ export function CreateDebateScreen({
         <View style={styles.field}>
           <Text style={styles.label}>Live tools</Text>
           <View style={styles.toolList}>
-            <View style={styles.toolRow}>
-              <Text style={styles.toolName}>AI fact-check</Text>
-              <Switch
-                disabled={submitting}
-                ios_backgroundColor={colors.borderSoft}
-                onValueChange={() => toggleTool('factCheck')}
-                thumbColor={colors.textPrimary}
-                trackColor={{ false: colors.surface, true: '#F2387A' }}
-                value={tools.factCheck}
-              />
-            </View>
             <View style={styles.toolRow}>
               <Text style={styles.toolName}>Audience comments</Text>
               <Switch

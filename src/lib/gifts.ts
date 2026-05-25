@@ -1,4 +1,5 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { trackLog, withTrace } from './opscompanion';
 import { getSupabaseClient } from './supabase';
 
 export type GiftType = {
@@ -45,23 +46,49 @@ export const COIN_PACKAGES: CoinPackage[] = [
 ];
 
 export async function getCoinBalance(userId: string): Promise<number> {
-  const supabase = getSupabaseClient();
-  const { data } = await supabase
-    .from('coin_balances')
-    .select('balance')
-    .eq('user_id', userId)
-    .single<{ balance: number }>();
-  return data?.balance ?? 0;
+  return withTrace('gifts.get_coin_balance', { feature: 'gifts', 'user.id': userId }, async () => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('coin_balances')
+      .select('balance')
+      .eq('user_id', userId)
+      .single<{ balance: number }>();
+
+    if (error && error.code !== 'PGRST116') {
+      await trackLog({
+        eventName: 'gifts.get_coin_balance.failed',
+        severity: 'ERROR',
+        body: error.message,
+        attributes: { feature: 'gifts', 'user.id': userId },
+      });
+      throw error;
+    }
+
+    return data?.balance ?? 0;
+  });
 }
 
 export async function getDiamondBalance(userId: string): Promise<{ balance: number; total_earned: number }> {
-  const supabase = getSupabaseClient();
-  const { data } = await supabase
-    .from('diamond_balances')
-    .select('balance, total_earned')
-    .eq('user_id', userId)
-    .single<{ balance: number; total_earned: number }>();
-  return data ?? { balance: 0, total_earned: 0 };
+  return withTrace('gifts.get_diamond_balance', { feature: 'gifts', 'user.id': userId }, async () => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('diamond_balances')
+      .select('balance, total_earned')
+      .eq('user_id', userId)
+      .single<{ balance: number; total_earned: number }>();
+
+    if (error && error.code !== 'PGRST116') {
+      await trackLog({
+        eventName: 'gifts.get_diamond_balance.failed',
+        severity: 'ERROR',
+        body: error.message,
+        attributes: { feature: 'gifts', 'user.id': userId },
+      });
+      throw error;
+    }
+
+    return data ?? { balance: 0, total_earned: 0 };
+  });
 }
 
 export async function createCoinCheckoutSession(packageId: string): Promise<string> {
@@ -93,16 +120,56 @@ export async function sendGift(
   recipientId: string,
   giftTypeId: string,
 ): Promise<string> {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase.rpc('send_gift', {
-    p_debate_id: debateId,
-    p_sender_id: senderId,
-    p_sender_name: senderName,
-    p_recipient_id: recipientId,
-    p_gift_type_id: giftTypeId,
-  });
-  if (error) throw error;
-  return data as string;
+  return withTrace(
+    'gifts.send',
+    {
+      feature: 'gifts',
+      'debate.id': debateId,
+      'gift.type_id': giftTypeId,
+      'sender.id': senderId,
+      'recipient.id': recipientId,
+    },
+    async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.rpc('send_gift', {
+        p_debate_id: debateId,
+        p_sender_id: senderId,
+        p_sender_name: senderName,
+        p_recipient_id: recipientId,
+        p_gift_type_id: giftTypeId,
+      });
+
+      if (error) {
+        await trackLog({
+          eventName: 'gifts.send.failed',
+          severity: 'ERROR',
+          body: error.message,
+          attributes: {
+            feature: 'gifts',
+            'debate.id': debateId,
+            'gift.type_id': giftTypeId,
+            'sender.id': senderId,
+            'recipient.id': recipientId,
+          },
+        });
+        throw error;
+      }
+
+      await trackLog({
+        eventName: 'gifts.send.succeeded',
+        body: { eventId: data, senderName, giftTypeId },
+        attributes: {
+          feature: 'gifts',
+          'debate.id': debateId,
+          'gift.type_id': giftTypeId,
+          'sender.id': senderId,
+          'recipient.id': recipientId,
+        },
+      });
+
+      return data as string;
+    },
+  );
 }
 
 export function subscribeToGiftEvents(

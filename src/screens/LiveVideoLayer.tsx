@@ -7,28 +7,24 @@ import {
   isTrackReference,
   useTracks,
   useLocalParticipant,
-  useParticipants,
   useVisualStableUpdate,
   type TrackReferenceOrPlaceholder,
 } from '@livekit/react-native';
 import { Track } from 'livekit-client';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+const GRID_GAP = 6;
+const GRID_HORIZONTAL_PADDING = 6;
+const GRID_TOP_PADDING = 88;
+const GRID_BOTTOM_PADDING = 180;
 
 type LiveVideoLayerProps = {
   serverUrl: string;
   token: string;
-  isHost: boolean;
   micEnabled: boolean;
   cameraEnabled: boolean;
-  cameraFacing?: 'front' | 'back';
+  cameraFacing: 'front' | 'back';
+  hostName?: string;
 };
-
-// ---------------------------------------------------------------------------
-// Grid layout helpers
-// ---------------------------------------------------------------------------
 
 function getGridCols(count: number): number {
   if (count <= 1) return 1;
@@ -42,30 +38,27 @@ function getInitials(name: string): string {
       .split(' ')
       .filter(Boolean)
       .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase() ?? '')
+      .map((word) => word[0]?.toUpperCase() ?? '')
       .join('') || '??'
   );
 }
-
-// ---------------------------------------------------------------------------
-// Single participant tile
-// ---------------------------------------------------------------------------
 
 type TileProps = {
   trackRef: TrackReferenceOrPlaceholder;
   tileWidth: number;
   tileHeight: number;
+  isHost: boolean;
 };
 
-function ParticipantTile({ trackRef, tileWidth, tileHeight }: TileProps) {
+function ParticipantTile({ trackRef, tileWidth, tileHeight, isHost }: TileProps) {
   const participant = trackRef.participant;
-  const hasVideo = isTrackReference(trackRef);
+  const hasVideo = isTrackReference(trackRef) && !trackRef.publication.isMuted;
   const isMicMuted = !participant.isMicrophoneEnabled;
   const name = participant.name ?? participant.identity ?? 'User';
   const initials = getInitials(name);
 
   return (
-    <View style={[styles.tile, { width: tileWidth, height: tileHeight }]}>
+    <View style={[styles.tile, { width: tileWidth, height: tileHeight }, isHost && styles.hostTile]}>
       {hasVideo ? (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         <VideoTrack trackRef={trackRef as any} style={StyleSheet.absoluteFillObject} objectFit="cover" />
@@ -77,56 +70,60 @@ function ParticipantTile({ trackRef, tileWidth, tileHeight }: TileProps) {
         </View>
       )}
 
-      {/* Name + mic indicator bar */}
+      {isHost ? (
+        <View style={styles.hostBadge}>
+          <Text style={styles.hostBadgeText}>Host</Text>
+        </View>
+      ) : null}
+
       <View style={styles.nameBar}>
-        {isMicMuted ? (
-          <View style={styles.mutedDot} />
-        ) : null}
+        {isMicMuted ? <View style={styles.mutedDot} /> : null}
         <Text style={styles.nameText} numberOfLines={1}>{name}</Text>
       </View>
     </View>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Grid of all participants
-// ---------------------------------------------------------------------------
-
-function VideoGrid() {
+function VideoGrid({ hostName }: { hostName?: string }) {
   const { width, height } = useWindowDimensions();
   const allTracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }],
     { onlySubscribed: false },
   );
-
-  // useVisualStableUpdate prevents flickering when participants join/leave
   const tracks = useVisualStableUpdate(allTracks, allTracks.length);
 
   const count = tracks.length;
+  if (count === 0) return null;
+
   const cols = getGridCols(count);
   const rows = Math.ceil(count / cols);
-  const tileWidth = width / cols;
-  const tileHeight = height / rows;
+  const availableWidth =
+    width - GRID_HORIZONTAL_PADDING * 2 - GRID_GAP * Math.max(0, cols - 1);
+  const availableHeight =
+    height - GRID_TOP_PADDING - GRID_BOTTOM_PADDING - GRID_GAP * Math.max(0, rows - 1);
 
-  if (count === 0) return null;
+  // Portrait-ratio tiles: fill available space naturally (taller than wide in most layouts)
+  const tileWidth = Math.max(80, Math.floor(availableWidth / cols));
+  const tileHeight = Math.max(120, Math.floor(availableHeight / rows));
 
   return (
     <View style={styles.grid}>
-      {tracks.map((trackRef) => (
-        <ParticipantTile
-          key={`${trackRef.participant.identity}-camera`}
-          trackRef={trackRef}
-          tileWidth={tileWidth}
-          tileHeight={tileHeight}
-        />
-      ))}
+      {tracks.map((trackRef) => {
+        const name = trackRef.participant.name ?? trackRef.participant.identity ?? '';
+        const isHost = Boolean(hostName && name === hostName);
+        return (
+          <ParticipantTile
+            key={`${trackRef.participant.identity}-camera`}
+            trackRef={trackRef}
+            tileWidth={tileWidth}
+            tileHeight={tileHeight}
+            isHost={isHost}
+          />
+        );
+      })}
     </View>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Local media sync — keeps mic/camera in sync with UI controls
-// ---------------------------------------------------------------------------
 
 function LocalMediaSync({
   micEnabled,
@@ -135,7 +132,7 @@ function LocalMediaSync({
 }: {
   micEnabled: boolean;
   cameraEnabled: boolean;
-  cameraFacing?: 'front' | 'back';
+  cameraFacing: 'front' | 'back';
 }) {
   const { localParticipant } = useLocalParticipant();
 
@@ -148,23 +145,28 @@ function LocalMediaSync({
   }, [cameraEnabled, localParticipant]);
 
   useEffect(() => {
-    if (!cameraEnabled || !cameraFacing) return;
-    // Re-publish camera with new facing mode when flipped
-    localParticipant.setCameraEnabled(false)
-      .then(() => localParticipant.setCameraEnabled(true, {
-        videoEncoding: undefined,
-        videoSimulcastLayers: undefined,
-      } as Parameters<typeof localParticipant.setCameraEnabled>[1]))
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraFacing]);
+    if (!cameraEnabled) return;
+
+    const publication = localParticipant.getTrackPublication(Track.Source.Camera);
+    const videoTrack = publication?.videoTrack;
+    const mediaStreamTrack = videoTrack?.mediaStreamTrack as
+      | ({ getSettings?: () => { facingMode?: string }; _switchCamera?: () => void })
+      | undefined;
+
+    if (!mediaStreamTrack?._switchCamera) return;
+
+    const currentFacingMode = mediaStreamTrack.getSettings?.().facingMode;
+    const desiredFacingMode = cameraFacing === 'front' ? 'user' : 'environment';
+
+    if (currentFacingMode && currentFacingMode === desiredFacingMode) {
+      return;
+    }
+
+    mediaStreamTrack._switchCamera();
+  }, [cameraEnabled, cameraFacing, localParticipant]);
 
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// Audio session lifecycle
-// ---------------------------------------------------------------------------
 
 function LiveKitAudioSession() {
   useEffect(() => {
@@ -177,17 +179,13 @@ function LiveKitAudioSession() {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Exported component
-// ---------------------------------------------------------------------------
-
 export function LiveVideoLayer({
   serverUrl,
   token,
-  isHost,
   micEnabled,
   cameraEnabled,
   cameraFacing,
+  hostName,
 }: LiveVideoLayerProps) {
   return (
     <LiveKitRoom
@@ -195,31 +193,42 @@ export function LiveVideoLayer({
       token={token}
       connect
       audio
-      video={isHost && cameraEnabled}
+      video={cameraEnabled}
     >
       <LiveKitAudioSession />
-      <VideoGrid />
-      <LocalMediaSync micEnabled={micEnabled} cameraEnabled={cameraEnabled} cameraFacing={cameraFacing} />
+      <VideoGrid hostName={hostName} />
+      <LocalMediaSync
+        micEnabled={micEnabled}
+        cameraEnabled={cameraEnabled}
+        cameraFacing={cameraFacing}
+      />
     </LiveKitRoom>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
   grid: {
     flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignContent: 'flex-start',
+    justifyContent: 'center',
+    gap: GRID_GAP,
+    paddingHorizontal: GRID_HORIZONTAL_PADDING,
+    paddingTop: GRID_TOP_PADDING,
+    paddingBottom: GRID_BOTTOM_PADDING,
     backgroundColor: '#000',
   },
   tile: {
     overflow: 'hidden',
+    borderRadius: 16,
     backgroundColor: '#1a1a1a',
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  hostTile: {
+    borderColor: '#8C35F8',
+    borderWidth: 2,
   },
   avatarContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -240,6 +249,20 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '300',
   },
+  hostBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  hostBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   nameBar: {
     position: 'absolute',
     bottom: 0,
@@ -249,18 +272,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingVertical: 5,
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   nameText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     flexShrink: 1,
   },
   mutedDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
     backgroundColor: '#FF4D6D',
   },

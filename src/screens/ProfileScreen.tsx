@@ -38,6 +38,7 @@ type ProfileScreenProps = {
   likedDebates: DebateCardItem[];
   savedDebates: DebateCardItem[];
   savedDebateIds: Set<string>;
+  coinBalance: number;
   editSubmitting?: boolean;
   editError?: string | null;
   onEditProfile: (values: EditProfileValues) => Promise<void>;
@@ -83,6 +84,7 @@ export function ProfileScreen({
   likedDebates,
   savedDebates,
   savedDebateIds,
+  coinBalance,
   editSubmitting = false,
   editError = null,
   onEditProfile,
@@ -962,3 +964,4 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
 });
+
