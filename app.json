@@ -51,8 +51,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "21d57d43-5bb7-420d-9ff1-030ac54b41d7"
+        "projectId": "3acbea05-7029-433c-86ad-cf208988f59d"
       }
-    }
+    },
+    "owner": "luxxpro"
   }
 }
