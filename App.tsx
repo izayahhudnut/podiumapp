@@ -20,6 +20,7 @@ import { DiscoverScreen } from './src/screens/DiscoverScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { checkBackendConnection } from './src/lib/backend';
 import {
+  deleteAccount,
   getCurrentSession,
   signInWithPassword,
   signOut,
@@ -651,33 +652,44 @@ export default function App() {
     }
   }
 
+  function resetLocalSessionState() {
+    setSession(null);
+    setGuestUser(null);
+    setPublicLiveDebates([]);
+    setPublicScheduledDebates([]);
+    setPresenceSnapshots({});
+    setUserProfile(null);
+    setUserDebates([]);
+    setLikedDebates([]);
+    setLikedDebateIds(new Set());
+    setSavedDebates([]);
+    setSavedDebateIds(new Set());
+    setFollowingIds(new Set());
+    setCoinBalance(0);
+    setFollowerCount(0);
+    setFollowingCount(0);
+    setActiveLiveDebate(null);
+    setAuthVariant('sign-in');
+    setPassword('');
+    setName('');
+    setAvatarUri(null);
+    setAuthError(null);
+  }
+
   async function handleSignOut() {
     try {
       await signOut();
-      setSession(null);
-      setGuestUser(null);
-      setPublicLiveDebates([]);
-      setPublicScheduledDebates([]);
-      setPresenceSnapshots({});
-      setUserProfile(null);
-      setUserDebates([]);
-      setLikedDebates([]);
-      setLikedDebateIds(new Set());
-      setSavedDebates([]);
-      setSavedDebateIds(new Set());
-      setFollowingIds(new Set());
-      setCoinBalance(0);
-      setFollowerCount(0);
-      setFollowingCount(0);
-      setActiveLiveDebate(null);
-      setAuthVariant('sign-in');
-      setPassword('');
-      setName('');
-      setAvatarUri(null);
-      setAuthError(null);
+      resetLocalSessionState();
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Unable to sign out right now.');
     }
+  }
+
+  async function handleDeleteAccount() {
+    // Throws on failure so ProfileScreen can surface the message; on success we
+    // clear all local session state and return the user to the auth screen.
+    await deleteAccount();
+    resetLocalSessionState();
   }
 
   function handleContinueAsGuest() {
@@ -1145,6 +1157,7 @@ export default function App() {
             editError={editError}
             onEditProfile={handleEditProfile}
             onSignOut={handleSignOut}
+            onDeleteAccount={handleDeleteAccount}
             onOpenDebate={handleOpenDebate}
             onSaveDebate={(id) => void handleToggleSave(id)}
             onDeleteDebate={(id) => void handleDeleteDebate(id)}

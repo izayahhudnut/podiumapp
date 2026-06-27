@@ -144,6 +144,52 @@ export async function signOut() {
   });
 }
 
+export async function deleteAccount() {
+  return withTrace('auth.delete_account', { feature: 'auth' }, async () => {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.functions.invoke<{ success?: boolean; error?: string }>(
+      'delete-account',
+      { body: {} },
+    );
+
+    if (error) {
+      // Surface the real error message from the function response when available.
+      let message = error.message;
+      try {
+        const body = await (error as unknown as { context: Response }).context.json() as { error?: string };
+        if (body?.error) message = body.error;
+      } catch {
+        // Fall back to the generic error message.
+      }
+      await trackLog({
+        eventName: 'auth.delete_account.failed',
+        severity: 'ERROR',
+        body: message,
+        attributes: { feature: 'auth' },
+      });
+      throw new Error(message);
+    }
+
+    if (data?.error) {
+      await trackLog({
+        eventName: 'auth.delete_account.failed',
+        severity: 'ERROR',
+        body: data.error,
+        attributes: { feature: 'auth' },
+      });
+      throw new Error(data.error);
+    }
+
+    await trackLog({
+      eventName: 'auth.delete_account.succeeded',
+      attributes: { feature: 'auth' },
+    });
+
+    // Clear the local session now that the account is gone server-side.
+    await supabase.auth.signOut();
+  });
+}
+
 export function subscribeToAuthChanges(
   callback: (event: AuthChangeEvent, session: Session | null) => void,
 ) {

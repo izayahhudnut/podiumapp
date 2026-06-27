@@ -43,6 +43,7 @@ type ProfileScreenProps = {
   editError?: string | null;
   onEditProfile: (values: EditProfileValues) => Promise<void>;
   onSignOut: () => void;
+  onDeleteAccount: () => Promise<void>;
   onOpenDebate: (debateId: string) => void;
   onSaveDebate: (debateId: string) => void;
   onDeleteDebate: (debateId: string) => void;
@@ -89,6 +90,7 @@ export function ProfileScreen({
   editError = null,
   onEditProfile,
   onSignOut,
+  onDeleteAccount,
   onOpenDebate,
   onSaveDebate,
   onDeleteDebate,
@@ -99,6 +101,7 @@ export function ProfileScreen({
   const [tab, setTab] = useState<Tab>('debates');
   const [isEditing, setIsEditing] = useState(false);
   const [isCoinSheetOpen, setIsCoinSheetOpen] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const [editName, setEditName] = useState(userName);
   const [editUsername, setEditUsername] = useState(username ?? '');
@@ -151,6 +154,48 @@ export function ProfileScreen({
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => onDeleteDebate(debateId) },
     ]);
+  }
+
+  async function runDeleteAccount() {
+    setIsDeletingAccount(true);
+    try {
+      await onDeleteAccount();
+    } catch (error) {
+      setIsDeletingAccount(false);
+      Alert.alert(
+        'Unable to delete account',
+        error instanceof Error ? error.message : 'Something went wrong. Please try again.',
+      );
+    }
+  }
+
+  function confirmDeleteAccount() {
+    Alert.alert(
+      'Delete Account',
+      'This permanently deletes your account and all of your data — debates, messages, gifts, coin balance, and profile. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () => {
+            // Second confirmation to guard against accidental taps.
+            Alert.alert(
+              'Are you absolutely sure?',
+              'Your account and all associated data will be permanently erased.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete Forever',
+                  style: 'destructive',
+                  onPress: () => { void runDeleteAccount(); },
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -339,6 +384,26 @@ export function ProfileScreen({
         >
           <Text style={styles.signOutText}>Sign Out</Text>
         </Pressable>
+
+        {/* Delete account */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.deleteAccountBtn,
+            isDeletingAccount && styles.saveButtonDisabled,
+            pressed && styles.pressed,
+          ]}
+          onPress={confirmDeleteAccount}
+          disabled={isDeletingAccount}
+        >
+          {isDeletingAccount ? (
+            <ActivityIndicator color="#FF5A5A" size="small" />
+          ) : (
+            <Text style={styles.deleteAccountText}>Delete Account</Text>
+          )}
+        </Pressable>
+        <Text style={styles.deleteAccountHint}>
+          Permanently deletes your account and all associated data.
+        </Text>
       </ScrollView>
 
       <CoinSheetModal
@@ -831,6 +896,30 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     fontWeight: '600',
+  },
+
+  // Delete account
+  deleteAccountBtn: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.4)',
+    alignItems: 'center',
+  },
+  deleteAccountText: {
+    color: '#FF5A5A',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  deleteAccountHint: {
+    color: colors.textFaint,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    marginHorizontal: spacing.lg,
   },
 
   // Edit modal
